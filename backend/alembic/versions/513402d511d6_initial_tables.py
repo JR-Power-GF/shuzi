@@ -142,20 +142,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(op.f('ix_submission_files_submission_id'), table_name='submission_files')
+    # Drop child tables first (they have FKs to parents)
     op.drop_table('submission_files')
-    op.drop_index(op.f('ix_grades_submission_id'), table_name='grades')
     op.drop_table('grades')
-    op.drop_index(op.f('ix_submissions_task_id'), table_name='submissions')
-    op.drop_index(op.f('ix_submissions_student_id'), table_name='submissions')
     op.drop_table('submissions')
-    op.drop_index(op.f('ix_tasks_created_by'), table_name='tasks')
-    op.drop_index(op.f('ix_tasks_class_id'), table_name='tasks')
     op.drop_table('tasks')
-    op.drop_index(op.f('ix_refresh_tokens_user_id'), table_name='refresh_tokens')
     op.drop_table('refresh_tokens')
     # Drop FK from classes before dropping users
     op.drop_constraint('fk_classes_teacher_id', 'classes', type_='foreignkey')
-    op.drop_index(op.f('ix_users_username'), table_name='users')
     op.drop_table('users')
     op.drop_table('classes')
