@@ -22,7 +22,7 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import api from '../../api'
+import api from '../api'
 
 const props = defineProps({
   visible: Boolean,
