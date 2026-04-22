@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth as auth_router
+from app.routers import classes as classes_router
 
 app = FastAPI(
     title="数字实训教学管理平台",
@@ -21,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router)
+app.include_router(classes_router.router)
 
 
 @app.get("/health")
