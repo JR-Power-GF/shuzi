@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.config import settings
 from app.database import Base, get_db
-from app.main import app
+from app.main import app as fastapi_app
 import app.models  # noqa: F401 — ensure all models are registered with Base
 
 # ---------------------------------------------------------------------------
@@ -16,10 +16,25 @@ TEST_DATABASE_URL = settings.DATABASE_URL.replace(
     "/training_platform", "/training_platform_test"
 )
 
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-test_session_maker = async_sessionmaker(
-    test_engine, class_=AsyncSession, expire_on_commit=False
-)
+
+# ---------------------------------------------------------------------------
+# Session-scoped engine fixture: created inside the event loop
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_engine():
+    """Create the async engine once per test session, inside the event loop."""
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    yield engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_session_maker(test_engine):
+    return async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -27,8 +42,8 @@ test_session_maker = async_sessionmaker(
 # ---------------------------------------------------------------------------
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def setup_test_db():
+@pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
+async def setup_test_db(test_engine):
     """Create all tables once per test session; drop them on session exit."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -48,8 +63,8 @@ async def setup_test_db():
 # ---------------------------------------------------------------------------
 
 
-@pytest_asyncio.fixture
-async def db_session():
+@pytest_asyncio.fixture(loop_scope="session")
+async def db_session(test_session_maker):
     """Provide a clean database session for each test.
 
     The session is rolled back after the test so subsequent tests start
@@ -60,15 +75,15 @@ async def db_session():
         await session.rollback()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="session")
 async def client(db_session: AsyncSession):
     """Provide an async HTTP test client with the DB session overridden."""
 
     async def override_get_db():
         yield db_session
 
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
+    fastapi_app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    app.dependency_overrides.clear()
+    fastapi_app.dependency_overrides.clear()
