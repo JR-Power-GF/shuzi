@@ -6,13 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_role
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, RefreshRequest, UserBrief
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    LoginResponse,
+    RefreshRequest,
+    ResetPasswordRequest,
+    UserBrief,
+)
 from app.utils.security import (
     create_access_token,
     create_refresh_token,
+    hash_password,
     hash_token,
     verify_password,
 )
@@ -133,3 +141,38 @@ async def logout(
         await db.flush()
 
     return {"message": "退出登录成功"}
+
+
+@router.post("/change-password")
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == current_user["id"]))
+    user = result.scalar_one_or_none()
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="当前密码错误")
+
+    user.password_hash = hash_password(data.new_password)
+    user.must_change_password = False
+    await db.flush()
+    return {"message": "密码修改成功"}
+
+
+@router.post("/reset-password/{user_id}")
+async def reset_password(
+    user_id: int,
+    data: ResetPasswordRequest,
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    user.password_hash = hash_password(data.new_password)
+    user.must_change_password = True
+    await db.flush()
+    return {"message": "密码重置成功"}

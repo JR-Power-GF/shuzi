@@ -69,3 +69,80 @@ async def test_logout_success(client, db_session):
     )
     assert resp.status_code == 200
     assert "成功" in resp.json()["message"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_change_password_success(client, db_session):
+    from tests.helpers import create_test_user, login_user
+
+    user = await create_test_user(db_session, username="changepw_user", password="oldpass123")
+    token = await login_user(client, "changepw_user", "oldpass123")
+
+    resp = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": "oldpass123", "new_password": "newpass456"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    # Login with new password
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"username": "changepw_user", "password": "newpass456"},
+    )
+    assert login_resp.status_code == 200
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_change_password_wrong_current(client, db_session):
+    from tests.helpers import create_test_user, login_user
+
+    user = await create_test_user(db_session, username="wrongpw_user", password="pass1234")
+    token = await login_user(client, "wrongpw_user", "pass1234")
+
+    resp = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrongpass", "new_password": "newpass456"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_change_password_too_short(client, db_session):
+    from tests.helpers import create_test_user, login_user
+
+    user = await create_test_user(db_session, username="shortpw_user", password="pass1234")
+    token = await login_user(client, "shortpw_user", "pass1234")
+
+    resp = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": "pass1234", "new_password": "short"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reset_password_admin(client, db_session):
+    from tests.helpers import create_test_user, login_user
+
+    admin = await create_test_user(db_session, username="reset_admin", password="admin1234", role="admin")
+    student = await create_test_user(db_session, username="reset_student", password="oldpass123")
+
+    admin_token = await login_user(client, "reset_admin", "admin1234")
+
+    resp = await client.post(
+        f"/api/auth/reset-password/{student.id}",
+        json={"new_password": "resetpass1"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+
+    # Student can login with new password
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"username": "reset_student", "password": "resetpass1"},
+    )
+    assert login_resp.status_code == 200
+    assert login_resp.json()["must_change_password"] is True
