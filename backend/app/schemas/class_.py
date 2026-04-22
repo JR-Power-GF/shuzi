@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -30,3 +30,12 @@ class StudentBrief(BaseModel):
     id: int
     username: str
     real_name: str
+
+
+class ClassListResponse(BaseModel):
+    items: List[ClassResponse]
+    total: int
+
+
+class EnrollStudents(BaseModel):
+    student_ids: List[int]
