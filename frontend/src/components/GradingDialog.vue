@@ -20,7 +20,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
@@ -35,6 +35,13 @@ const emit = defineEmits(['update:visible', 'graded'])
 const loading = ref(false)
 
 const form = reactive({ score: 0, feedback: '' })
+
+watch(() => props.visible, (val) => {
+  if (val) {
+    form.score = 0
+    form.feedback = ''
+  }
+})
 
 const penaltyInfo = computed(() => {
   if (!props.submission?.is_late || !props.latePenaltyPercent) return null

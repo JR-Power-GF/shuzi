@@ -41,7 +41,7 @@ const uploadRef = ref(null)
 const fileList = ref([])
 const uploadedTokens = ref([])
 
-const uploadAction = computed(() => '/api/files/upload')
+const uploadAction = computed(() => `${import.meta.env.VITE_API_BASE_URL || '/api'}/files/upload`)
 const uploadHeaders = computed(() => ({
   Authorization: `Bearer ${localStorage.getItem('access_token')}`,
 }))
