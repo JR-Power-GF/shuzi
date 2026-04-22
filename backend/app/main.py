@@ -5,6 +5,7 @@ from app.routers import auth as auth_router
 from app.routers import classes as classes_router
 from app.routers import tasks as tasks_router
 from app.routers import files as files_router
+from app.routers import submissions as submissions_router
 
 app = FastAPI(
     title="数字实训教学管理平台",
@@ -27,6 +28,7 @@ app.include_router(auth_router.router)
 app.include_router(classes_router.router)
 app.include_router(tasks_router.router)
 app.include_router(files_router.router)
+app.include_router(submissions_router.router)
 
 
 @app.get("/health")
