@@ -18,3 +18,9 @@ class ClassResponse(BaseModel):
     teacher_name: Optional[str] = None
     student_count: int = 0
     created_at: datetime
+
+
+class StudentBrief(BaseModel):
+    id: int
+    username: str
+    real_name: str
