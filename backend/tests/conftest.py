@@ -87,3 +87,21 @@ async def client(db_session: AsyncSession):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     fastapi_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def upload_dir(tmp_path):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (uploads / "tmp").mkdir()
+
+    original_upload_dir = settings.UPLOAD_DIR
+    original_tmp_dir = settings.UPLOAD_TMP_DIR
+
+    settings.UPLOAD_DIR = str(uploads)
+    settings.UPLOAD_TMP_DIR = str(uploads / "tmp")
+
+    yield str(uploads)
+
+    settings.UPLOAD_DIR = original_upload_dir
+    settings.UPLOAD_TMP_DIR = original_tmp_dir
