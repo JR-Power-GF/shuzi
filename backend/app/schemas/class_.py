@@ -20,6 +20,12 @@ class ClassResponse(BaseModel):
     created_at: datetime
 
 
+class ClassUpdate(BaseModel):
+    name: Optional[str] = None
+    semester: Optional[str] = None
+    teacher_id: Optional[int] = None
+
+
 class StudentBrief(BaseModel):
     id: int
     username: str
