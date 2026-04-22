@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.dependencies.auth import get_current_user
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, UserBrief
+from app.schemas.auth import LoginRequest, LoginResponse, RefreshRequest, UserBrief
 from app.utils.security import (
     create_access_token,
     create_refresh_token,
@@ -66,3 +67,69 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
             role=user.role,
         ),
     )
+
+
+@router.post("/refresh")
+async def refresh_token(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    from app.utils.security import hash_token
+
+    token_hash = hash_token(data.refresh_token)
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked == False,
+        )
+    )
+    rt = result.scalar_one_or_none()
+    if not rt:
+        raise HTTPException(status_code=401, detail="无效的刷新令牌")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if rt.expires_at.replace(tzinfo=datetime.timezone.utc) < now:
+        raise HTTPException(status_code=401, detail="刷新令牌已过期")
+
+    # Revoke old refresh token
+    rt.revoked = True
+
+    # Get user
+    user_result = await db.execute(select(User).where(User.id == rt.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="用户不存在或已禁用")
+
+    # Issue new token pair
+    access_token = create_access_token(user.id, user.role, user.username)
+    new_refresh_token_str = create_refresh_token(user.id)
+    new_rt = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(new_refresh_token_str),
+        expires_at=now + datetime.timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    db.add(new_rt)
+    await db.flush()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token_str,
+        "token_type": "bearer",
+    }
+
+
+@router.post("/logout")
+async def logout(
+    data: RefreshRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.utils.security import hash_token
+
+    token_hash = hash_token(data.refresh_token)
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    )
+    rt = result.scalar_one_or_none()
+    if rt and rt.user_id == current_user["id"]:
+        rt.revoked = True
+        await db.flush()
+
+    return {"message": "退出登录成功"}

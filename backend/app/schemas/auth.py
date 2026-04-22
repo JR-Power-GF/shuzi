@@ -19,3 +19,7 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     must_change_password: bool
     user: UserBrief
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
