@@ -9,7 +9,7 @@ from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskResponse
+from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -130,3 +130,29 @@ async def get_task_detail(
     cls_result = await db.execute(select(Class.name).where(Class.id == task.class_id))
     class_name = cls_result.scalar_one()
     return _task_to_response(task, class_name)
+
+
+@router.put("/{task_id}", response_model=TaskResponse)
+async def update_task(
+    task_id: int,
+    data: TaskUpdate,
+    current_user=Depends(require_role("teacher")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能编辑自己创建的任务")
+
+    for field, value in data.model_dump(exclude_unset=True).items():
+        if field == "allowed_file_types" and value is not None:
+            setattr(task, field, json.dumps(value))
+        else:
+            setattr(task, field, value)
+    await db.flush()
+
+    cls_result = await db.execute(select(Class).where(Class.id == task.class_id))
+    cls = cls_result.scalar_one()
+    return _task_to_response(task, cls.name)

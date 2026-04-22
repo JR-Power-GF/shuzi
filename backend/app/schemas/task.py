@@ -17,6 +17,17 @@ class TaskCreate(BaseModel):
     late_penalty_percent: Optional[float] = None
 
 
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    deadline: Optional[datetime] = None
+    allowed_file_types: Optional[List[str]] = None
+    max_file_size_mb: Optional[int] = None
+    allow_late_submission: Optional[bool] = None
+    late_penalty_percent: Optional[float] = None
+
+
 class TaskResponse(BaseModel):
     id: int
     title: str
