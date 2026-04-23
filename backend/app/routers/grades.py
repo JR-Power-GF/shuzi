@@ -9,7 +9,7 @@ from app.dependencies.auth import require_role
 from app.models.grade import Grade
 from app.models.submission import Submission
 from app.models.task import Task
-from app.schemas.grade import GradeCreate, GradeResponse
+from app.schemas.grade import GradeCreate, GradeResponse, BulkGradeRequest
 
 router = APIRouter(prefix="/api", tags=["grades"])
 
@@ -119,3 +119,54 @@ async def unpublish_grades(
     await db.flush()
 
     return {"grades_published": False, "task_id": task_id}
+
+
+@router.post("/tasks/{task_id}/grades/bulk")
+async def bulk_grade(
+    task_id: int,
+    data: BulkGradeRequest,
+    current_user=Depends(require_role("teacher")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能评自己创建的任务")
+
+    graded_count = 0
+    for item in data.grades:
+        sub_result = await db.execute(
+            select(Submission).where(Submission.id == item.submission_id)
+        )
+        submission = sub_result.scalar_one_or_none()
+        if not submission or submission.task_id != task_id:
+            continue
+
+        penalty_applied = None
+        if submission.is_late and task.late_penalty_percent:
+            penalty_applied = round(item.score * task.late_penalty_percent / 100, 2)
+
+        existing = await db.execute(
+            select(Grade).where(Grade.submission_id == submission.id)
+        )
+        grade = existing.scalar_one_or_none()
+        if grade:
+            grade.score = item.score
+            grade.feedback = item.feedback
+            grade.penalty_applied = penalty_applied
+            grade.graded_by = current_user["id"]
+        else:
+            grade = Grade(
+                submission_id=submission.id,
+                score=item.score,
+                feedback=item.feedback,
+                penalty_applied=penalty_applied,
+                graded_by=current_user["id"],
+            )
+            db.add(grade)
+        graded_count += 1
+
+    await db.flush()
+    return {"graded_count": graded_count}
