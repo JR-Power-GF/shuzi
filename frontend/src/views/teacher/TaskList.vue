@@ -24,11 +24,14 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="$router.push(`/teacher/tasks/${row.id}/submissions`)">
             查看提交
           </el-button>
+          <el-button size="small" @click="$router.push(`/teacher/tasks/${row.id}/edit`)">编辑</el-button>
+          <el-button v-if="row.status === 'active'" size="small" type="warning" @click="handleArchive(row)">归档</el-button>
+          <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -37,7 +40,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../../api'
 
 const tasks = ref([])
@@ -48,15 +51,32 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
-onMounted(async () => {
+async function fetchTasks() {
   loading.value = true
   try {
     const resp = await api.get('/tasks/my')
     tasks.value = resp.data
-  } catch {
-    ElMessage.error('获取任务列表失败')
-  } finally {
-    loading.value = false
-  }
-})
+  } catch { ElMessage.error('获取任务列表失败') }
+  finally { loading.value = false }
+}
+
+async function handleArchive(task) {
+  try {
+    await ElMessageBox.confirm(`确认归档任务 "${task.title}"？`, '归档')
+    await api.post(`/tasks/${task.id}/archive`)
+    ElMessage.success('已归档')
+    await fetchTasks()
+  } catch (err) { if (err !== 'cancel') ElMessage.error('归档失败') }
+}
+
+async function handleDelete(task) {
+  try {
+    await ElMessageBox.confirm(`确认删除任务 "${task.title}"？已有提交的任务无法删除。`, '删除任务')
+    await api.delete(`/tasks/${task.id}`)
+    ElMessage.success('已删除')
+    await fetchTasks()
+  } catch (err) { if (err !== 'cancel') ElMessage.error(err.response?.data?.detail || '删除失败') }
+}
+
+onMounted(fetchTasks)
 </script>
