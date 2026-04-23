@@ -1,12 +1,15 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
+from app.models.submission import Submission
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
@@ -156,3 +159,69 @@ async def update_task(
     cls_result = await db.execute(select(Class).where(Class.id == task.class_id))
     cls = cls_result.scalar_one()
     return _task_to_response(task, cls.name)
+
+
+@router.delete("/{task_id}")
+async def delete_task(
+    task_id: int,
+    current_user=Depends(require_role("teacher")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能删除自己创建的任务")
+
+    sub_count = await db.execute(
+        select(func.count()).select_from(Submission).where(Submission.task_id == task_id)
+    )
+    if sub_count.scalar() > 0:
+        raise HTTPException(status_code=400, detail="任务已有提交，无法删除")
+
+    await db.delete(task)
+    await db.flush()
+    return {"message": "任务已删除"}
+
+
+@router.post("/{task_id}/archive")
+async def archive_task(
+    task_id: int,
+    current_user=Depends(require_role("teacher")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能归档自己创建的任务")
+
+    task.status = "archived"
+    await db.flush()
+    return {"id": task.id, "status": "archived"}
+
+
+@router.get("", response_model=dict)
+async def list_tasks_admin(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user=Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Task)
+    total_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = total_result.scalar()
+
+    result = await db.execute(query.offset(skip).limit(limit).order_by(Task.id.desc()))
+    tasks = result.scalars().all()
+
+    items = []
+    for task in tasks:
+        cls_result = await db.execute(select(Class).where(Class.id == task.class_id))
+        cls = cls_result.scalar_one_or_none()
+        class_name = cls.name if cls else ""
+        items.append(_task_to_response(task, class_name))
+
+    return {"items": items, "total": total}
