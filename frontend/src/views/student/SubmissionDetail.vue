@@ -4,7 +4,9 @@
 
     <div v-if="submission" style="margin-top: 20px">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="版本">v{{ submission.version }}</el-descriptions-item>
+        <el-descriptions-item label="版本">
+          <el-tag size="large" type="primary">v{{ submission.version }}</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="提交时间">{{ formatDate(submission.submitted_at) }}</el-descriptions-item>
         <el-descriptions-item label="迟交">
           <el-tag v-if="submission.is_late" type="warning" size="small">迟交</el-tag>
@@ -46,6 +48,12 @@
         </el-descriptions>
       </div>
       <el-alert v-else type="info" :closable="false" description="成绩尚未发布，请等待教师评分并发布" />
+
+      <el-divider />
+
+      <div style="text-align: center">
+        <el-button type="primary" @click="$router.back()">返回任务</el-button>
+      </div>
     </div>
   </div>
 </template>
