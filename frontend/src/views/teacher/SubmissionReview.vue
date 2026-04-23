@@ -22,6 +22,14 @@
       >
         撤回发布
       </el-button>
+      <el-button
+        v-if="submissions.length > 0"
+        type="primary"
+        size="small"
+        @click="showBulkGrade"
+      >
+        批量评分
+      </el-button>
     </div>
 
     <el-table :data="submissions" stripe style="margin-top: 16px">
@@ -57,11 +65,27 @@
       :late-penalty-percent="task?.late_penalty_percent"
       @graded="fetchSubmissions"
     />
+
+    <el-dialog v-model="bulkVisible" title="批量评分" width="400px">
+      <el-form label-width="80px">
+        <el-form-item label="分数">
+          <el-input-number v-model="bulkScore" :min="0" :max="100" :precision="1" />
+          <span style="margin-left: 8px; color: #909399">/ 100</span>
+        </el-form-item>
+      </el-form>
+      <p style="color: #909399; font-size: 13px">
+        将为所有未评分的提交（{{ ungradedCount }} 个）设置相同分数，迟交扣分会自动计算。
+      </p>
+      <template #footer>
+        <el-button @click="bulkVisible = false">取消</el-button>
+        <el-button type="primary" :loading="bulkLoading" @click="handleBulkGrade">确认批量评分</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../../api'
@@ -75,6 +99,32 @@ const submissions = ref([])
 const loading = ref(false)
 const gradingVisible = ref(false)
 const gradingSubmission = ref(null)
+
+const bulkVisible = ref(false)
+const bulkScore = ref(80)
+const bulkLoading = ref(false)
+
+const ungradedCount = computed(() => submissions.value.filter(s => !s.grade).length)
+
+function showBulkGrade() {
+  bulkScore.value = 80
+  bulkVisible.value = true
+}
+
+async function handleBulkGrade() {
+  const ungraded = submissions.value.filter(s => !s.grade)
+  if (ungraded.length === 0) { ElMessage.info('没有未评分的提交'); return }
+  bulkLoading.value = true
+  try {
+    await api.post(`/tasks/${taskId}/grades/bulk`, {
+      grades: ungraded.map(s => ({ submission_id: s.id, score: bulkScore.value })),
+    })
+    ElMessage.success(`已为 ${ungraded.length} 个提交评分`)
+    bulkVisible.value = false
+    await fetchSubmissions()
+  } catch (err) { ElMessage.error(err.response?.data?.detail || '批量评分失败') }
+  finally { bulkLoading.value = false }
+}
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
