@@ -14,6 +14,14 @@ class UserCreate(BaseModel):
     primary_class_id: Optional[int] = None
 
 
+class UserSelfUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    real_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class UserUpdate(BaseModel):
     real_name: Optional[str] = None
     email: Optional[str] = None

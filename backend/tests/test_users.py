@@ -158,3 +158,53 @@ async def test_deactivate_user(client, db_session):
         json={"username": "deact_target", "password": "pass1234"},
     )
     assert login_resp.status_code == 401
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_me_cannot_set_is_active(client, db_session):
+    """P0 fix: students must not be able to set is_active via PUT /me."""
+    from tests.helpers import create_test_user, login_user
+
+    user = await create_test_user(db_session, username="no_self_deact", password="pass1234")
+    token = await login_user(client, "no_self_deact", "pass1234")
+
+    resp = await client.put(
+        "/api/users/me",
+        json={"is_active": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_me_cannot_set_primary_class_id(client, db_session):
+    """P0 fix: students must not be able to set primary_class_id via PUT /me."""
+    from tests.helpers import create_test_user, login_user
+
+    user = await create_test_user(db_session, username="no_class_set", password="pass1234")
+    token = await login_user(client, "no_class_set", "pass1234")
+
+    resp = await client.put(
+        "/api/users/me",
+        json={"primary_class_id": 999},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_admin_can_set_is_active(client, db_session):
+    """Admin PUT /:id should still be able to set is_active and primary_class_id."""
+    from tests.helpers import create_test_user, login_user
+
+    admin = await create_test_user(db_session, username="admin_active", password="admin1234", role="admin")
+    target = await create_test_user(db_session, username="active_target", password="pass1234")
+    token = await login_user(client, "admin_active", "admin1234")
+
+    resp = await client.put(
+        f"/api/users/{target.id}",
+        json={"is_active": False, "primary_class_id": None},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["is_active"] is False

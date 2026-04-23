@@ -1,11 +1,13 @@
 from pydantic_settings import BaseSettings
 from typing import List
 
+_DEFAULT_SECRET_KEY = "dev-secret-key-change-in-production"
+
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+aiomysql://root:rootpassword@127.0.0.1:3306/training_platform"
     SYNC_DATABASE_URL: str = "mysql+pymysql://root:rootpassword@127.0.0.1:3306/training_platform"
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    SECRET_KEY: str = _DEFAULT_SECRET_KEY
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     UPLOAD_DIR: str = "/uploads"
@@ -26,3 +28,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_secret_key(s: Settings) -> None:
+    if s.SECRET_KEY == _DEFAULT_SECRET_KEY:
+        raise ValueError(
+            "SECRET_KEY is set to the default value. "
+            "Set the SECRET_KEY environment variable to a strong random string."
+        )

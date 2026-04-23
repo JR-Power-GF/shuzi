@@ -1,17 +1,34 @@
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings, validate_secret_key
 from app.routers import auth as auth_router
 from app.routers import classes as classes_router
 from app.routers import tasks as tasks_router
 from app.routers import files as files_router
 from app.routers import submissions as submissions_router
 from app.routers import grades as grades_router
+from app.routers import users as users_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        validate_secret_key(settings)
+    except ValueError:
+        if os.environ.get("ENVIRONMENT") != "test":
+            raise
+    yield
+
 
 app = FastAPI(
     title="数字实训教学管理平台",
     description="Digital Training Teaching Management Platform API",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -31,6 +48,7 @@ app.include_router(tasks_router.router)
 app.include_router(files_router.router)
 app.include_router(submissions_router.router)
 app.include_router(grades_router.router)
+app.include_router(users_router.router)
 
 
 @app.get("/health")

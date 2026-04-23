@@ -8,7 +8,7 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.user import User
 from app.models.class_ import Class
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserListResponse
+from app.schemas.user import UserCreate, UserUpdate, UserSelfUpdate, UserResponse, UserListResponse
 from app.utils.security import hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -100,7 +100,7 @@ async def get_me(
 
 @router.put("/me", response_model=UserResponse)
 async def update_me(
-    data: UserUpdate,
+    data: UserSelfUpdate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

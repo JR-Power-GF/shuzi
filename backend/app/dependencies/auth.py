@@ -3,10 +3,12 @@ from typing import AsyncGenerator, Optional
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.user import User
 
 security = HTTPBearer()
 
@@ -23,11 +25,6 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
-        return {
-            "id": int(payload["sub"]),
-            "role": payload["role"],
-            "username": payload.get("username"),
-        }
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -38,6 +35,21 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
+
+    user_id = int(payload["sub"])
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User deactivated or not found",
+        )
+
+    return {
+        "id": user.id,
+        "role": user.role,
+        "username": user.username,
+    }
 
 
 def require_role(allowed_role: str):
