@@ -24,6 +24,14 @@
             <span>我的任务</span>
           </el-menu-item>
         </template>
+        <template v-if="auth.userRole === 'admin'">
+          <el-menu-item index="/admin/users">
+            <span>用户管理</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/classes">
+            <span>班级管理</span>
+          </el-menu-item>
+        </template>
       </el-menu>
     </el-aside>
     <el-container>

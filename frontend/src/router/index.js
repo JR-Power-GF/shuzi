@@ -52,6 +52,30 @@ const routes = [
         component: () => import('../views/student/SubmissionDetail.vue'),
         meta: { roles: ['student'] },
       },
+      {
+        path: 'admin/users',
+        name: 'AdminUserList',
+        component: () => import('../views/admin/UserList.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'admin/classes',
+        name: 'AdminClassList',
+        component: () => import('../views/admin/ClassList.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'admin/classes/:id/roster',
+        name: 'AdminClassRoster',
+        component: () => import('../views/admin/ClassRoster.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'teacher/tasks/:id/edit',
+        name: 'TeacherTaskEdit',
+        component: () => import('../views/teacher/TaskEdit.vue'),
+        meta: { roles: ['teacher'] },
+      },
     ],
   },
 ]
