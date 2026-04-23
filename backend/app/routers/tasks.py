@@ -149,7 +149,25 @@ async def update_task(
     if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能编辑自己创建的任务")
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+
+    sub_count = await db.execute(
+        select(func.count()).select_from(Submission).where(Submission.task_id == task_id)
+    )
+    has_submissions = sub_count.scalar() > 0
+
+    if has_submissions:
+        if "allowed_file_types" in update_data:
+            raise HTTPException(status_code=400, detail="已有提交，不能修改文件类型")
+        if "deadline" in update_data and update_data["deadline"] is not None:
+            earliest_result = await db.execute(
+                select(func.min(Submission.submitted_at)).where(Submission.task_id == task_id)
+            )
+            earliest = earliest_result.scalar()
+            if earliest and update_data["deadline"] < earliest:
+                raise HTTPException(status_code=400, detail="截止日期不能早于最早提交时间")
+
+    for field, value in update_data.items():
         if field == "allowed_file_types" and value is not None:
             setattr(task, field, json.dumps(value))
         else:

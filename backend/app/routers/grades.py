@@ -29,6 +29,9 @@ async def grade_submission(
     if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能评自己创建的任务")
 
+    if task.grades_published:
+        raise HTTPException(status_code=400, detail="请先撤回已发布的成绩")
+
     if data.score < 0 or data.score > 100:
         raise HTTPException(status_code=422, detail="分数必须在 0-100 之间")
 
@@ -91,6 +94,12 @@ async def publish_grades(
     if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能发布自己任务的成绩")
 
+    grade_count = await db.execute(
+        select(Grade).join(Submission).where(Submission.task_id == task_id)
+    )
+    if not grade_count.scalars().first():
+        raise HTTPException(status_code=400, detail="没有可发布的成绩")
+
     task.grades_published = True
     task.grades_published_at = datetime.datetime.utcnow()
     task.grades_published_by = current_user["id"]
@@ -134,6 +143,9 @@ async def bulk_grade(
         raise HTTPException(status_code=404, detail="任务不存在")
     if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能评自己创建的任务")
+
+    if task.grades_published:
+        raise HTTPException(status_code=400, detail="请先撤回已发布的成绩")
 
     graded_count = 0
     for item in data.grades:

@@ -76,7 +76,7 @@ async def test_login_inactive_user(client, db_session):
         "/api/auth/login",
         json={"username": "disabled", "password": "pass123"},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio(loop_scope="session")

@@ -33,12 +33,15 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.username == data.username))
     user = result.scalar_one_or_none()
 
-    if not user or not user.is_active:
+    if not user:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="账户已停用")
 
     now = datetime.datetime.utcnow()
     if user.locked_until and user.locked_until > now:
-        raise HTTPException(status_code=403, detail="账号已被锁定，请稍后重试")
+        raise HTTPException(status_code=403, detail="账户已锁定，请30分钟后重试")
 
     if not verify_password(data.password, user.password_hash):
         user.failed_login_attempts += 1
@@ -156,7 +159,7 @@ async def change_password(
     result = await db.execute(select(User).where(User.id == current_user["id"]))
     user = result.scalar_one_or_none()
     if not verify_password(data.current_password, user.password_hash):
-        raise HTTPException(status_code=400, detail="当前密码错误")
+        raise HTTPException(status_code=401, detail="当前密码错误")
 
     user.password_hash = hash_password(data.new_password)
     user.must_change_password = False

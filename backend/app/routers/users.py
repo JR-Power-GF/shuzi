@@ -37,7 +37,7 @@ async def create_user(
 ):
     existing = await db.execute(select(User).where(User.username == data.username))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="用户名已存在")
+        raise HTTPException(status_code=409, detail="用户名已存在")
 
     if data.primary_class_id:
         cls = await db.execute(select(Class).where(Class.id == data.primary_class_id))
@@ -143,6 +143,9 @@ async def deactivate_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+
+    if user.id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="不能停用自己的账户")
 
     user.is_active = False
     await db.flush()

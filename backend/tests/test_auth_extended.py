@@ -145,7 +145,7 @@ async def test_change_password_wrong_current(client, db_session):
         json={"current_password": "wrongpass", "new_password": "newpass456"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio(loop_scope="session")

@@ -38,7 +38,7 @@ async def test_create_user_duplicate(client, db_session):
         json={"username": "existing", "password": "pass1234", "real_name": "重复", "role": "student"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 409
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -157,7 +157,7 @@ async def test_deactivate_user(client, db_session):
         "/api/auth/login",
         json={"username": "deact_target", "password": "pass1234"},
     )
-    assert login_resp.status_code == 401
+    assert login_resp.status_code == 403
 
 
 @pytest.mark.asyncio(loop_scope="session")
