@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["grades"])
 async def grade_submission(
     task_id: int,
     data: GradeCreate,
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -26,7 +26,7 @@ async def grade_submission(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能评自己创建的任务")
 
     if data.score < 0 or data.score > 100:
@@ -80,7 +80,7 @@ async def grade_submission(
 @router.post("/tasks/{task_id}/grades/publish")
 async def publish_grades(
     task_id: int,
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -88,7 +88,7 @@ async def publish_grades(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能发布自己任务的成绩")
 
     task.grades_published = True
@@ -102,7 +102,7 @@ async def publish_grades(
 @router.post("/tasks/{task_id}/grades/unpublish")
 async def unpublish_grades(
     task_id: int,
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -110,7 +110,7 @@ async def unpublish_grades(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能取消发布自己任务的成绩")
 
     task.grades_published = False
@@ -125,14 +125,14 @@ async def unpublish_grades(
 async def bulk_grade(
     task_id: int,
     data: BulkGradeRequest,
-    current_user=Depends(require_role("teacher")),
+    current_user=Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能评自己创建的任务")
 
     graded_count = 0

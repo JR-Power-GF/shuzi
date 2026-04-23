@@ -1,4 +1,6 @@
 import pytest
+import bcrypt
+from sqlalchemy import select
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -98,3 +100,69 @@ async def test_login_locked_account(client, db_session):
     )
     assert resp.status_code == 403
     assert "锁定" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_account_lockout_after_threshold(test_session_maker):
+    """FAIL-002 fix: failed_login_attempts must persist across requests.
+
+    Uses a production-like get_db (commit on success, rollback on exception)
+    to verify that the counter survives the request lifecycle.
+    """
+    from app.models.user import User
+    from app.config import settings
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app as fastapi_app
+    from app.database import get_db
+
+    # 1. Create user and commit to DB
+    async with test_session_maker() as setup_session:
+        pw_hash = bcrypt.hashpw(b"correct1234", bcrypt.gensalt()).decode()
+        user = User(
+            username="lockout_user", password_hash=pw_hash,
+            real_name="锁定测试", role="student",
+        )
+        setup_session.add(user)
+        await setup_session.commit()
+
+    # 2. Override get_db with production-like behavior (commit on success)
+    async def production_get_db():
+        async with test_session_maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    fastapi_app.dependency_overrides[get_db] = production_get_db
+    transport = ASGITransport(app=fastapi_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # 3. Send LOCKOUT_THRESHOLD wrong passwords
+        for i in range(settings.LOCKOUT_THRESHOLD):
+            resp = await ac.post(
+                "/api/auth/login",
+                json={"username": "lockout_user", "password": "wrongpass123"},
+            )
+            assert resp.status_code == 401
+
+        # 4. Correct password should be locked (403)
+        resp = await ac.post(
+            "/api/auth/login",
+            json={"username": "lockout_user", "password": "correct1234"},
+        )
+        assert resp.status_code == 403
+        assert "锁定" in resp.json()["detail"]
+
+    fastapi_app.dependency_overrides.clear()
+
+    # 5. Cleanup
+    async with test_session_maker() as cleanup:
+        result = await cleanup.execute(
+            select(User).where(User.username == "lockout_user")
+        )
+        if result.scalar_one_or_none():
+            await cleanup.execute(
+                User.__table__.delete().where(User.username == "lockout_user")
+            )
+            await cleanup.commit()

@@ -40,7 +40,7 @@ def _task_to_response(task: Task, class_name: str) -> TaskResponse:
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     data: TaskCreate,
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Class).where(Class.id == data.class_id))
@@ -48,7 +48,7 @@ async def create_task(
     if not cls:
         raise HTTPException(status_code=404, detail="班级不存在")
 
-    if cls.teacher_id != current_user["id"]:
+    if current_user["role"] != "admin" and cls.teacher_id != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能为自己的班级创建任务")
 
     task = Task(
@@ -139,14 +139,14 @@ async def get_task_detail(
 async def update_task(
     task_id: int,
     data: TaskUpdate,
-    current_user=Depends(require_role("teacher")),
+    current_user=Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能编辑自己创建的任务")
 
     for field, value in data.model_dump(exclude_unset=True).items():
@@ -164,14 +164,14 @@ async def update_task(
 @router.delete("/{task_id}")
 async def delete_task(
     task_id: int,
-    current_user=Depends(require_role("teacher")),
+    current_user=Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能删除自己创建的任务")
 
     sub_count = await db.execute(
@@ -188,14 +188,14 @@ async def delete_task(
 @router.post("/{task_id}/archive")
 async def archive_task(
     task_id: int,
-    current_user=Depends(require_role("teacher")),
+    current_user=Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能归档自己创建的任务")
 
     task.status = "archived"

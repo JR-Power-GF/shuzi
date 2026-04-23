@@ -52,12 +52,17 @@ async def get_current_user(
     }
 
 
-def require_role(allowed_role: str):
+def require_role(allowed_roles):
+    """Accept a single role string or a list of role strings."""
+    if isinstance(allowed_roles, str):
+        allowed_roles = [allowed_roles]
+
     async def role_checker(current_user: dict = Depends(get_current_user)) -> dict:
-        if current_user["role"] != allowed_role:
+        if current_user["role"] not in allowed_roles:
+            roles_str = "', '".join(allowed_roles)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{allowed_role}' required",
+                detail=f"Role '{roles_str}' required",
             )
         return current_user
     return role_checker

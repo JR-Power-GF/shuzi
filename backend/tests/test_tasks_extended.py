@@ -110,3 +110,53 @@ async def test_list_tasks_admin(client, db_session):
     data = resp.json()
     assert "items" in data
     assert data["total"] >= 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_admin_can_create_task(client, db_session):
+    """FAIL-003 fix: admin should be able to create tasks for any class."""
+    from tests.helpers import create_test_user, create_test_class, login_user
+
+    admin = await create_test_user(
+        db_session, username="admin_taskcreate", password="admin1234", role="admin"
+    )
+    teacher = await create_test_user(
+        db_session, username="tc_teacher", password="pass1234", role="teacher"
+    )
+    cls = await create_test_class(db_session, teacher_id=teacher.id)
+    token = await login_user(client, "admin_taskcreate", "admin1234")
+
+    resp = await client.post(
+        "/api/tasks",
+        json={
+            "title": "管理员创建的任务",
+            "class_id": cls.id,
+            "deadline": "2026-12-31T23:59:59",
+            "allowed_file_types": [".pdf", ".doc"],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["title"] == "管理员创建的任务"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_admin_can_archive_task(client, db_session):
+    """FAIL-003 fix: admin should be able to archive tasks."""
+    from tests.helpers import create_test_user, create_test_class, create_test_task, login_user
+
+    admin = await create_test_user(
+        db_session, username="admin_archive", password="admin1234", role="admin"
+    )
+    teacher = await create_test_user(
+        db_session, username="ar_teacher", password="pass1234", role="teacher"
+    )
+    cls = await create_test_class(db_session, teacher_id=teacher.id)
+    task = await create_test_task(db_session, class_id=cls.id, created_by=teacher.id)
+    token = await login_user(client, "admin_archive", "admin1234")
+
+    resp = await client.post(
+        f"/api/tasks/{task.id}/archive",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200

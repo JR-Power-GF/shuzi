@@ -25,6 +25,46 @@ async def test_refresh_success(client, db_session):
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_refresh_old_token_rejected_after_rotation(client, db_session):
+    """FAIL-001 fix: old refresh token must be rejected after rotation.
+
+    Even when both tokens are created in the same second (deterministic JWT),
+    the old token must be rejected on reuse.
+    """
+    from tests.helpers import create_test_user
+
+    await create_test_user(db_session, username="rotation_user", password="pass1234")
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"username": "rotation_user", "password": "pass1234"},
+    )
+    old_refresh = login_resp.json()["refresh_token"]
+
+    # Use the refresh token once — should succeed and rotate
+    resp1 = await client.post(
+        "/api/auth/refresh",
+        json={"refresh_token": old_refresh},
+    )
+    assert resp1.status_code == 200
+    new_refresh = resp1.json()["refresh_token"]
+    assert new_refresh != old_refresh
+
+    # Reuse the OLD refresh token — must be rejected (401)
+    resp2 = await client.post(
+        "/api/auth/refresh",
+        json={"refresh_token": old_refresh},
+    )
+    assert resp2.status_code == 401
+
+    # New refresh token should still work
+    resp3 = await client.post(
+        "/api/auth/refresh",
+        json={"refresh_token": new_refresh},
+    )
+    assert resp3.status_code == 200
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_refresh_revoked_token(client, db_session):
     from tests.helpers import create_test_user
 

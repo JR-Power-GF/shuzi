@@ -1,3 +1,5 @@
+import uuid
+
 import bcrypt
 import hashlib
 import datetime
@@ -37,7 +39,7 @@ def create_refresh_token(user_id: int) -> str:
     expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
-    payload = {"sub": str(user_id), "type": "refresh", "exp": expire}
+    payload = {"sub": str(user_id), "type": "refresh", "jti": str(uuid.uuid4()), "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 

@@ -53,12 +53,15 @@ async def create_class(
 
 @router.get("/my", response_model=list[ClassResponse])
 async def get_my_classes(
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Class).where(Class.teacher_id == current_user["id"])
-    )
+    if current_user["role"] == "admin":
+        result = await db.execute(select(Class))
+    else:
+        result = await db.execute(
+            select(Class).where(Class.teacher_id == current_user["id"])
+        )
     classes = result.scalars().all()
 
     response = []

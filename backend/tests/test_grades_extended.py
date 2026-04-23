@@ -54,3 +54,34 @@ async def test_bulk_grade_invalid_score(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_admin_can_grade(client, db_session):
+    """FAIL-003 fix: admin should be able to grade submissions."""
+    from tests.helpers import create_test_user, create_test_class, create_test_task, login_user
+
+    admin = await create_test_user(
+        db_session, username="admin_grader", password="admin1234", role="admin"
+    )
+    teacher = await create_test_user(
+        db_session, username="ag_teacher", password="pass1234", role="teacher"
+    )
+    cls = await create_test_class(db_session, teacher_id=teacher.id)
+    student = await create_test_user(
+        db_session, username="ag_student", password="pass1234", primary_class_id=cls.id
+    )
+    task = await create_test_task(db_session, class_id=cls.id, created_by=teacher.id)
+
+    from app.models.submission import Submission
+    sub = Submission(task_id=task.id, student_id=student.id)
+    db_session.add(sub)
+    await db_session.flush()
+
+    token = await login_user(client, "admin_grader", "admin1234")
+    resp = await client.post(
+        f"/api/tasks/{task.id}/grades",
+        json={"submission_id": sub.id, "score": 88, "feedback": "admin graded"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200

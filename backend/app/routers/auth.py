@@ -47,7 +47,11 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
                 minutes=settings.LOCKOUT_DURATION_MINUTES
             )
         await db.flush()
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        # Return error response directly instead of raising HTTPException.
+        # get_db() commits on normal return, persisting the counter.
+        # Raising triggers get_db()'s rollback and loses the counter.
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "用户名或密码错误"})
 
     user.failed_login_attempts = 0
     user.locked_until = None
