@@ -10,6 +10,7 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     requirements: Optional[str] = None
     class_id: int
+    course_id: Optional[int] = None
     deadline: datetime
     allowed_file_types: List[str]
     max_file_size_mb: int = 50
@@ -21,6 +22,7 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     requirements: Optional[str] = None
+    course_id: Optional[int] = None
     deadline: Optional[datetime] = None
     allowed_file_types: Optional[List[str]] = None
     max_file_size_mb: Optional[int] = None
@@ -35,6 +37,7 @@ class TaskResponse(BaseModel):
     requirements: Optional[str] = None
     class_id: int
     class_name: str
+    course_id: Optional[int] = None
     created_by: int
     deadline: datetime
     allowed_file_types: List[str]

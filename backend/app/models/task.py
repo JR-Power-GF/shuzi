@@ -18,7 +18,7 @@ class Task(Base):
         Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     course_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True
+        Integer, ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     created_by: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
