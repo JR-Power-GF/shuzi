@@ -90,3 +90,24 @@ class AIService:
         if remaining <= 0:
             raise BudgetExceededError("今日 AI 调用额度已用完，请明天再试")
         return remaining
+
+    async def _log_usage(
+        self, db: AsyncSession, *, user_id: int, endpoint: str, model: str,
+        prompt_tokens: int, completion_tokens: int, cost_microdollars: int,
+        latency_ms: int, status: str,
+    ) -> int:
+        from app.models.ai_usage_log import AIUsageLog
+
+        log = AIUsageLog(
+            user_id=user_id,
+            endpoint=endpoint,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cost_microdollars=cost_microdollars,
+            latency_ms=latency_ms,
+            status=status,
+        )
+        db.add(log)
+        await db.flush()
+        return log.id

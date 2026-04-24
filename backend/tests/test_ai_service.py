@@ -59,3 +59,56 @@ async def test_budget_first_call_of_day(db_session: AsyncSession):
     config = await service._get_config(db_session)
     remaining = await service.check_budget(db_session, 999, "teacher", config)
     assert remaining == 200000
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_log_usage_success(db_session: AsyncSession):
+    from sqlalchemy import select
+    from app.models.ai_usage_log import AIUsageLog
+    from app.models.user import User
+
+    user_id = 1
+    db_session.add(User(
+        id=user_id, username="testlogsuccess", password_hash="x",
+        real_name="Test", role="student",
+    ))
+    await db_session.flush()
+
+    service = AIService(provider=MockProvider())
+    log_id = await service._log_usage(
+        db_session, user_id=user_id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=100, completion_tokens=50, cost_microdollars=45,
+        latency_ms=200, status="success",
+    )
+    assert log_id is not None
+
+    result = await db_session.execute(select(AIUsageLog).where(AIUsageLog.id == log_id))
+    log = result.scalar_one()
+    assert log.status == "success"
+    assert log.cost_microdollars == 45
+    assert log.prompt_tokens == 100
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_log_usage_error(db_session: AsyncSession):
+    from sqlalchemy import select
+    from app.models.ai_usage_log import AIUsageLog
+    from app.models.user import User
+
+    user_id = 1
+    db_session.add(User(
+        id=user_id, username="testlogerror", password_hash="x",
+        real_name="Test", role="student",
+    ))
+    await db_session.flush()
+
+    service = AIService(provider=MockProvider())
+    log_id = await service._log_usage(
+        db_session, user_id=user_id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=0, completion_tokens=0, cost_microdollars=0,
+        latency_ms=500, status="error",
+    )
+    result = await db_session.execute(select(AIUsageLog).where(AIUsageLog.id == log_id))
+    log = result.scalar_one()
+    assert log.status == "error"
+    assert log.prompt_tokens == 0
