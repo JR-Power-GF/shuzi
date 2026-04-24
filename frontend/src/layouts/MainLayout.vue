@@ -40,6 +40,18 @@
           <el-menu-item index="/admin/courses">
             <span>课程管理</span>
           </el-menu-item>
+          <el-menu-item index="/admin/ai/config">
+            <span>AI 配置</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/ai/usage">
+            <span>AI 使用记录</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/ai/feedback">
+            <span>AI 反馈</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/ai/prompts">
+            <span>Prompt 模板</span>
+          </el-menu-item>
         </template>
       </el-menu>
     </el-aside>

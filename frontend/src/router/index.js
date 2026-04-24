@@ -106,6 +106,30 @@ const routes = [
         component: () => import('../views/student/CourseList.vue'),
         meta: { roles: ['student'] },
       },
+      {
+        path: 'admin/ai/config',
+        name: 'AdminAIConfig',
+        component: () => import('../views/admin/AIConfig.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'admin/ai/usage',
+        name: 'AdminAIUsage',
+        component: () => import('../views/admin/AIUsage.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'admin/ai/feedback',
+        name: 'AdminAIFeedback',
+        component: () => import('../views/admin/AIFeedback.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'admin/ai/prompts',
+        name: 'AdminPromptTemplates',
+        component: () => import('../views/admin/PromptTemplates.vue'),
+        meta: { roles: ['admin'] },
+      },
     ],
   },
 ]
