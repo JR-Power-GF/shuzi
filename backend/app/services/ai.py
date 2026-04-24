@@ -1,6 +1,13 @@
+import datetime
 import time
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.models.ai_config import AIConfig
 
 
 @dataclass
@@ -36,3 +43,29 @@ class AIServiceError(Exception):
 
 class BudgetExceededError(Exception):
     pass
+
+
+class AIService:
+    def __init__(self, provider: AIProvider = None):
+        if provider is None:
+            provider = MockProvider()
+        self.provider = provider
+
+    async def _get_config(self, db: AsyncSession) -> dict:
+        result = await db.execute(select(AIConfig))
+        rows = result.scalars().all()
+        config = {
+            "model": settings.AI_MODEL,
+            "budget_admin": 500000,
+            "budget_teacher": 200000,
+            "budget_student": 50000,
+            "price_input": 0.15,
+            "price_output": 0.60,
+        }
+        for row in rows:
+            if row.key in ("budget_admin", "budget_teacher", "budget_student",
+                           "price_input", "price_output"):
+                config[row.key] = float(row.value)
+            else:
+                config[row.key] = row.value
+        return config
