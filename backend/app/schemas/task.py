@@ -47,3 +47,16 @@ class TaskResponse(BaseModel):
     status: str
     grades_published: bool
     created_at: datetime
+
+
+class TaskDescriptionGenerateRequest(BaseModel):
+    title: str
+    course_name: str = "实训课程"
+    language: str = "中文"
+
+
+class TaskDescriptionGenerateResponse(BaseModel):
+    description: str
+    usage_log_id: int
+    prompt_tokens: int
+    completion_tokens: int
