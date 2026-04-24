@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings, validate_secret_key
 from app.routers import auth as auth_router
 from app.routers import classes as classes_router
+from app.routers import courses as courses_router
 from app.routers import tasks as tasks_router
 from app.routers import files as files_router
 from app.routers import submissions as submissions_router
@@ -44,6 +45,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router)
 app.include_router(classes_router.router)
+app.include_router(courses_router.router)
 app.include_router(tasks_router.router)
 app.include_router(files_router.router)
 app.include_router(submissions_router.router)
