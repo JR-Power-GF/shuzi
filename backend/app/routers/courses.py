@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies.auth import require_role
+from app.dependencies.auth import get_current_user, require_role
+from app.models.class_ import Class
 from app.models.course import Course
+from app.models.task import Task
 from app.models.user import User
-from app.schemas.course import CourseCreate, CourseResponse, CourseUpdate
+from app.schemas.course import CourseCreate, CourseDetailResponse, CourseResponse, CourseUpdate
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -88,6 +92,114 @@ async def update_course(
     teacher_name = teacher_result.scalar_one_or_none() or ""
 
     return _course_to_response(course, teacher_name)
+
+
+@router.get("", response_model=list[CourseResponse])
+async def list_courses(
+    semester: Optional[str] = Query(None),
+    teacher_id_filter: Optional[int] = Query(None, alias="teacher_id"),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user["role"] == "student":
+        # Student sees courses via task-class join: tasks in their class that have a course_id
+        user_result = await db.execute(
+            select(User.primary_class_id).where(User.id == current_user["id"])
+        )
+        class_id = user_result.scalar_one_or_none()
+        if not class_id:
+            return []
+        query = (
+            select(Course)
+            .join(Task, Task.course_id == Course.id)
+            .where(Task.class_id == class_id)
+            .where(Course.status == "active")
+            .distinct()
+            .order_by(Course.semester.desc(), Course.name)
+        )
+    elif current_user["role"] == "teacher":
+        query = select(Course).where(Course.teacher_id == current_user["id"])
+        if status_filter:
+            query = query.where(Course.status == status_filter)
+        query = query.order_by(Course.semester.desc(), Course.name)
+    else:  # admin
+        query = select(Course)
+        if semester:
+            query = query.where(Course.semester == semester)
+        if teacher_id_filter:
+            query = query.where(Course.teacher_id == teacher_id_filter)
+        if status_filter:
+            query = query.where(Course.status == status_filter)
+        query = query.order_by(Course.semester.desc(), Course.name)
+
+    result = await db.execute(query)
+    courses = result.scalars().all()
+
+    response = []
+    for course in courses:
+        teacher_name_result = await db.execute(
+            select(User.real_name).where(User.id == course.teacher_id)
+        )
+        teacher_name = teacher_name_result.scalar_one()
+        task_count_result = await db.execute(
+            select(func.count()).select_from(Task).where(Task.course_id == course.id)
+        )
+        task_count = task_count_result.scalar()
+        response.append(_course_to_response(course, teacher_name, task_count))
+    return response
+
+
+@router.get("/{course_id}", response_model=CourseDetailResponse)
+async def get_course_detail(
+    course_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Course).where(Course.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="课程不存在")
+
+    if current_user["role"] == "teacher" and course.teacher_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="无权查看该课程")
+    if current_user["role"] == "student":
+        raise HTTPException(status_code=403, detail="学生请使用课程卡片接口")
+
+    teacher_name_result = await db.execute(
+        select(User.real_name).where(User.id == course.teacher_id)
+    )
+    teacher_name = teacher_name_result.scalar_one()
+
+    task_result = await db.execute(
+        select(Task).where(Task.course_id == course_id).order_by(Task.deadline)
+    )
+    tasks = task_result.scalars().all()
+    task_list = []
+    for t in tasks:
+        cls_result = await db.execute(select(Class.name).where(Class.id == t.class_id))
+        class_name = cls_result.scalar_one_or_none() or ""
+        task_list.append({
+            "id": t.id,
+            "title": t.title,
+            "class_name": class_name,
+            "deadline": t.deadline.isoformat() if t.deadline else None,
+            "status": t.status,
+        })
+
+    return CourseDetailResponse(
+        id=course.id,
+        name=course.name,
+        description=course.description,
+        semester=course.semester,
+        teacher_id=course.teacher_id,
+        teacher_name=teacher_name,
+        status=course.status,
+        task_count=len(task_list),
+        created_at=course.created_at,
+        updated_at=course.updated_at,
+        tasks=task_list,
+    )
 
 
 @router.post("/{course_id}/archive")

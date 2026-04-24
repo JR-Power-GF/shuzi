@@ -1,5 +1,11 @@
 import pytest
-from tests.helpers import create_test_user, login_user, auth_headers
+from tests.helpers import (
+    create_test_user,
+    create_test_class,
+    create_test_task,
+    login_user,
+    auth_headers,
+)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -271,3 +277,105 @@ async def test_delete_course_not_allowed(client, db_session):
     )
     assert resp.status_code == 405
     assert "课程不支持删除，请使用归档" in resp.json()["detail"]
+
+
+# --- Tasks 8-11: List, Detail, Student Visibility ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_courses_teacher_own(client, db_session):
+    """Teacher sees only own courses"""
+    await create_test_user(db_session, username="teacher1", role="teacher")
+    await create_test_user(db_session, username="teacher2", role="teacher")
+    token1 = await login_user(client, "teacher1")
+    token2 = await login_user(client, "teacher2")
+
+    await client.post("/api/courses", json={"name": "课程A", "semester": "2026-2027-1"}, headers=auth_headers(token1))
+    await client.post("/api/courses", json={"name": "课程B", "semester": "2025-2026-2"}, headers=auth_headers(token1))
+    await client.post("/api/courses", json={"name": "课程C", "semester": "2026-2027-1"}, headers=auth_headers(token2))
+
+    resp = await client.get("/api/courses", headers=auth_headers(token1))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    names = {c["name"] for c in data}
+    assert names == {"课程A", "课程B"}
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_courses_admin_all(client, db_session):
+    """Admin sees all courses"""
+    await create_test_user(db_session, username="teacher1", role="teacher")
+    await create_test_user(db_session, username="admin1", role="admin")
+    token_t = await login_user(client, "teacher1")
+    token_a = await login_user(client, "admin1")
+
+    await client.post("/api/courses", json={"name": "课程A", "semester": "2026-2027-1"}, headers=auth_headers(token_t))
+    await client.post("/api/courses", json={"name": "课程B", "semester": "2025-2026-2"}, headers=auth_headers(token_t))
+
+    resp = await client.get("/api/courses", headers=auth_headers(token_a))
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_courses_admin_filter(client, db_session):
+    """Admin can filter by semester"""
+    await create_test_user(db_session, username="teacher1", role="teacher")
+    await create_test_user(db_session, username="admin1", role="admin")
+    token_t = await login_user(client, "teacher1")
+    token_a = await login_user(client, "admin1")
+
+    await client.post("/api/courses", json={"name": "课程A", "semester": "2026-2027-1"}, headers=auth_headers(token_t))
+    await client.post("/api/courses", json={"name": "课程B", "semester": "2025-2026-2"}, headers=auth_headers(token_t))
+
+    resp = await client.get("/api/courses?semester=2026-2027-1", headers=auth_headers(token_a))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "课程A"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_courses_student(client, db_session):
+    """Student sees courses via task-class join"""
+    teacher = await create_test_user(db_session, username="teacher1", role="teacher")
+    cls = await create_test_class(db_session, name="1班", teacher_id=teacher.id)
+    await create_test_user(db_session, username="stu1", role="student", primary_class_id=cls.id)
+    token_t = await login_user(client, "teacher1")
+    token_s = await login_user(client, "stu1")
+
+    create_resp = await client.post("/api/courses", json={"name": "课程A", "semester": "2026-2027-1"}, headers=auth_headers(token_t))
+    course_id = create_resp.json()["id"]
+
+    task = await create_test_task(db_session, title="任务1", class_id=cls.id, created_by=teacher.id)
+    task.course_id = course_id
+    await db_session.flush()
+
+    resp = await client.get("/api/courses", headers=auth_headers(token_s))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "课程A"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_course_detail_with_tasks(client, db_session):
+    """Teacher views course detail"""
+    teacher = await create_test_user(db_session, username="teacher1", role="teacher")
+    cls = await create_test_class(db_session, teacher_id=teacher.id)
+    token = await login_user(client, "teacher1")
+
+    create_resp = await client.post("/api/courses", json={"name": "课程A", "semester": "2026-2027-1"}, headers=auth_headers(token))
+    course_id = create_resp.json()["id"]
+
+    task = await create_test_task(db_session, title="任务1", class_id=cls.id, created_by=teacher.id)
+    task.course_id = course_id
+    await db_session.flush()
+
+    resp = await client.get(f"/api/courses/{course_id}", headers=auth_headers(token))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "课程A"
+    assert len(data["tasks"]) == 1
+    assert data["tasks"][0]["title"] == "任务1"
