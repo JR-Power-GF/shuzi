@@ -141,6 +141,8 @@ class AIService:
                 "completion_tokens": response.completion_tokens,
                 "cost_microdollars": cost,
             }
+        except BudgetExceededError:
+            raise
         except AIServiceError:
             raise
         except Exception as e:
@@ -157,18 +159,15 @@ class OpenAIProvider:
     """Real OpenAI API provider using AsyncOpenAI."""
 
     def __init__(self, api_key: str, base_url: str = ""):
-        self.api_key = api_key
-        self.base_url = base_url
-
-    async def generate(self, prompt: str, model: str) -> AIResponse:
         from openai import AsyncOpenAI
 
-        kwargs = {"api_key": self.api_key}
-        if self.base_url:
-            kwargs["base_url"] = self.base_url
+        kwargs = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        self.client = AsyncOpenAI(**kwargs)
 
-        client = AsyncOpenAI(**kwargs)
-        response = await client.chat.completions.create(
+    async def generate(self, prompt: str, model: str) -> AIResponse:
+        response = await self.client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000,

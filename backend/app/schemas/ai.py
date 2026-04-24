@@ -64,9 +64,9 @@ class AIConfigOut(BaseModel):
 
 class AIConfigUpdate(BaseModel):
     model: Optional[str] = None
-    budget_admin: Optional[int] = None
-    budget_teacher: Optional[int] = None
-    budget_student: Optional[int] = None
+    budget_admin: Optional[int] = Field(None, ge=0)
+    budget_teacher: Optional[int] = Field(None, ge=0)
+    budget_student: Optional[int] = Field(None, ge=0)
 
 
 class AITestOut(BaseModel):

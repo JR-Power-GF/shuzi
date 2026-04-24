@@ -211,8 +211,8 @@ async def test_generate_cost_calculation(db_session: AsyncSession):
 async def test_openai_provider_creates_client():
     from app.services.ai import OpenAIProvider
     provider = OpenAIProvider(api_key="test-key", base_url="https://api.example.com/v1")
-    assert provider.api_key == "test-key"
-    assert provider.base_url == "https://api.example.com/v1"
+    assert provider.client is not None
+    assert provider.client.api_key == "test-key"
 
 
 def test_get_ai_service_returns_mock_by_default():

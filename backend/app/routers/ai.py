@@ -100,7 +100,8 @@ async def query_usage(
 
     config_result = await db.execute(select(AIConfig))
     configs = {c.key: c.value for c in config_result.scalars().all()}
-    budget_limit = int(float(configs.get(f"budget_{role}", "50000")))
+    role_budget_defaults = {"admin": 500000, "teacher": 200000, "student": 50000}
+    budget_limit = int(float(configs.get(f"budget_{role}", str(role_budget_defaults.get(role, 50000)))))
 
     today_start = dt.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     used_result = await db.execute(
