@@ -10,6 +10,8 @@ from app.models.ai_usage_log import AIUsageLog
 from app.models.ai_feedback import AIFeedback
 from app.models.ai_config import AIConfig
 from app.models.user import User
+from fastapi.responses import JSONResponse
+
 from app.schemas.ai import (
     AIFeedbackIn, AIFeedbackOut, AIUsageOut, AIUsageWithBudget,
     AIStatsOut, AIStatsByUser, AIFeedbackSummary,
@@ -193,3 +195,64 @@ async def get_stats(
         success_rate=round(success_rate, 2),
         avg_latency_ms=round(float(row.avg_lat), 1),
     )
+
+
+@router.post("/test", response_model=AITestOut)
+async def test_ai_call(
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    service = _get_ai_service()
+    try:
+        result = await service.generate(
+            db=db, prompt="你好，请回复'测试成功'", user_id=current_user["id"],
+            role=current_user["role"], endpoint="test",
+        )
+    except BudgetExceededError:
+        raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
+    except AIServiceError:
+        return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
+
+    return AITestOut(
+        text=result["text"],
+        usage_log_id=result["usage_log_id"],
+        prompt_tokens=result["prompt_tokens"],
+        completion_tokens=result["completion_tokens"],
+    )
+
+
+@router.get("/config", response_model=AIConfigOut)
+async def read_config(
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(AIConfig))
+    configs = {c.key: c.value for c in result.scalars().all()}
+
+    return AIConfigOut(
+        model=configs.get("model", settings.AI_MODEL),
+        budget_admin=int(configs.get("budget_admin", "500000")),
+        budget_teacher=int(configs.get("budget_teacher", "200000")),
+        budget_student=int(configs.get("budget_student", "50000")),
+        is_configured=bool(settings.AI_API_KEY),
+    )
+
+
+@router.put("/config", response_model=AIConfigOut)
+async def update_config(
+    data: AIConfigUpdate,
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    updates = data.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        result = await db.execute(select(AIConfig).where(AIConfig.key == key))
+        config = result.scalar_one_or_none()
+        if config:
+            config.value = str(value)
+            config.updated_by = current_user["id"]
+        else:
+            db.add(AIConfig(key=key, value=str(value), updated_by=current_user["id"]))
+    await db.flush()
+
+    return await read_config(current_user=current_user, db=db)
