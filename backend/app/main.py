@@ -13,6 +13,7 @@ from app.routers import files as files_router
 from app.routers import submissions as submissions_router
 from app.routers import grades as grades_router
 from app.routers import users as users_router
+from app.routers import ai as ai_router
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ app.include_router(files_router.router)
 app.include_router(submissions_router.router)
 app.include_router(grades_router.router)
 app.include_router(users_router.router)
+app.include_router(ai_router.router)
 
 
 @app.get("/health")
