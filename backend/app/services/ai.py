@@ -179,3 +179,9 @@ class OpenAIProvider:
             prompt_tokens=usage.prompt_tokens if usage else 0,
             completion_tokens=usage.completion_tokens if usage else 0,
         )
+
+
+def get_ai_service() -> AIService:
+    if settings.AI_API_KEY:
+        return AIService(provider=OpenAIProvider(api_key=settings.AI_API_KEY, base_url=settings.AI_BASE_URL))
+    return AIService(provider=MockProvider())

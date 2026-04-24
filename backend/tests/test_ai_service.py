@@ -213,3 +213,9 @@ async def test_openai_provider_creates_client():
     provider = OpenAIProvider(api_key="test-key", base_url="https://api.example.com/v1")
     assert provider.api_key == "test-key"
     assert provider.base_url == "https://api.example.com/v1"
+
+
+def test_get_ai_service_returns_mock_by_default():
+    from app.services.ai import get_ai_service
+    service = get_ai_service()
+    assert isinstance(service.provider, MockProvider)

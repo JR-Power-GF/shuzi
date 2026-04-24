@@ -18,17 +18,9 @@ from app.schemas.ai import (
     AIStatsOut, AIFeedbackSummary,
     AIConfigOut, AIConfigUpdate, AITestOut,
 )
-from app.services.ai import AIService, AIServiceError, BudgetExceededError, MockProvider
+from app.services.ai import AIService, AIServiceError, BudgetExceededError, MockProvider, get_ai_service
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
-
-
-def _get_ai_service() -> AIService:
-    if settings.AI_API_KEY:
-        from app.services.ai import OpenAIProvider
-        provider = OpenAIProvider(api_key=settings.AI_API_KEY, base_url=settings.AI_BASE_URL)
-        return AIService(provider=provider)
-    return AIService(provider=MockProvider())
 
 
 @router.post("/feedback", response_model=AIFeedbackOut)
@@ -200,7 +192,7 @@ async def test_ai_call(
     current_user: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    service = _get_ai_service()
+    service = get_ai_service()
     try:
         result = await service.generate(
             db=db, prompt="你好，请回复'测试成功'", user_id=current_user["id"],
