@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
+from app.models.course import Course
 from app.models.submission import Submission
 from app.models.task import Task
 from app.models.user import User
@@ -25,6 +26,7 @@ def _task_to_response(task: Task, class_name: str) -> TaskResponse:
         requirements=task.requirements,
         class_id=task.class_id,
         class_name=class_name,
+        course_id=task.course_id,
         created_by=task.created_by,
         deadline=task.deadline,
         allowed_file_types=json.loads(task.allowed_file_types),
@@ -51,11 +53,21 @@ async def create_task(
     if current_user["role"] != "admin" and cls.teacher_id != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能为自己的班级创建任务")
 
+    course_id = data.course_id
+    if course_id is not None:
+        course_result = await db.execute(select(Course).where(Course.id == course_id))
+        course = course_result.scalar_one_or_none()
+        if not course:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        if current_user["role"] != "admin" and course.teacher_id != current_user["id"]:
+            raise HTTPException(status_code=403, detail="只能关联自己的课程")
+
     task = Task(
         title=data.title,
         description=data.description,
         requirements=data.requirements,
         class_id=data.class_id,
+        course_id=course_id,
         created_by=current_user["id"],
         deadline=data.deadline,
         allowed_file_types=json.dumps(data.allowed_file_types),
@@ -83,8 +95,10 @@ async def get_my_tasks(
             return []
         result = await db.execute(
             select(Task)
+            .outerjoin(Course, Course.id == Task.course_id)
             .where(Task.class_id == class_id)
             .where(Task.status == "active")
+            .where((Course.status == "active") | (Course.id.is_(None)))
             .order_by(Task.deadline)
         )
     elif current_user["role"] == "teacher":
@@ -150,6 +164,14 @@ async def update_task(
         raise HTTPException(status_code=403, detail="只能编辑自己创建的任务")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if "course_id" in update_data and update_data["course_id"] is not None:
+        course_result = await db.execute(select(Course).where(Course.id == update_data["course_id"]))
+        course = course_result.scalar_one_or_none()
+        if not course:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        if current_user["role"] != "admin" and course.teacher_id != current_user["id"]:
+            raise HTTPException(status_code=403, detail="只能关联自己的课程")
 
     sub_count = await db.execute(
         select(func.count()).select_from(Submission).where(Submission.task_id == task_id)
@@ -225,10 +247,13 @@ async def archive_task(
 async def list_tasks_admin(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    course_id: Optional[int] = Query(None),
     current_user=Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Task)
+    if course_id is not None:
+        query = query.where(Task.course_id == course_id)
     total_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = total_result.scalar()
 
