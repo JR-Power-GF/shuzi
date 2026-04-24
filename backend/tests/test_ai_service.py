@@ -205,3 +205,11 @@ async def test_generate_cost_calculation(db_session: AsyncSession):
     )
     log = log_result.scalar_one()
     assert log.cost_microdollars == int(500 * 0.15 + 200 * 0.60)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_openai_provider_creates_client():
+    from app.services.ai import OpenAIProvider
+    provider = OpenAIProvider(api_key="test-key", base_url="https://api.example.com/v1")
+    assert provider.api_key == "test-key"
+    assert provider.base_url == "https://api.example.com/v1"
