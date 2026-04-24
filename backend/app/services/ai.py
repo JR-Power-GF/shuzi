@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -69,3 +69,24 @@ class AIService:
             else:
                 config[row.key] = row.value
         return config
+
+    async def check_budget(self, db: AsyncSession, user_id: int, role: str, config: dict) -> int:
+        from app.models.ai_usage_log import AIUsageLog
+
+        budget_key = f"budget_{role}"
+        budget = config.get(budget_key, 50000)
+
+        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await db.execute(
+            select(func.coalesce(func.sum(
+                AIUsageLog.prompt_tokens + AIUsageLog.completion_tokens
+            ), 0)).where(
+                AIUsageLog.user_id == user_id,
+                AIUsageLog.created_at >= today_start,
+            )
+        )
+        used = result.scalar()
+        remaining = int(budget - used)
+        if remaining <= 0:
+            raise BudgetExceededError("今日 AI 调用额度已用完，请明天再试")
+        return remaining
