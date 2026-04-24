@@ -79,7 +79,15 @@ async def seed():
             PromptTemplate(
                 name="task_description",
                 description="生成任务描述",
-                template_text="请为 {course_name} 课程生成一个关于 {topic} 的任务描述，包括目标、步骤和评分标准。语言：{language}",
+                template_text=(
+                    "请为「{course_name}」课程生成一个关于「{topic}」的实训任务说明草稿，要求包含以下部分：\n\n"
+                    "## 任务背景\n简要说明该任务的背景和实际意义。\n\n"
+                    "## 任务目标\n列出 3-5 个具体、可衡量的学习目标。\n\n"
+                    "## 实施步骤\n分步骤说明学生需要完成的工作，每一步包含具体操作指导。\n\n"
+                    "## 提交要求\n说明需要提交的内容、格式和命名规范。\n\n"
+                    "## 评分要点\n列出评分维度（如完成度、代码质量、文档规范性等）和权重建议。\n\n"
+                    "请使用{language}撰写，确保内容清晰、可操作。只输出任务说明正文，不要输出额外解释。"
+                ),
                 variables=json.dumps(["course_name", "topic", "language"]),
             ),
             PromptTemplate(
