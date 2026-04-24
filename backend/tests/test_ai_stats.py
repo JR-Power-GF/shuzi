@@ -99,3 +99,64 @@ async def test_feedback_summary(client, db_session):
     data = resp.json()
     assert data["positive_count"] == 1
     assert data["negative_count"] == 1
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_usage_filter_by_user_id(client, db_session):
+    admin = await create_test_user(db_session, username="admin_filter", role="admin")
+    student = await create_test_user(db_session, username="stu_filter", role="student")
+    other = await create_test_user(db_session, username="stu_other", role="student")
+    token = await login_user(client, "admin_filter")
+
+    db_session.add(AIUsageLog(
+        user_id=student.id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=100, completion_tokens=50, cost_microdollars=45,
+        latency_ms=200, status="success",
+    ))
+    db_session.add(AIUsageLog(
+        user_id=other.id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=80, completion_tokens=40, cost_microdollars=36,
+        latency_ms=150, status="success",
+    ))
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/ai/usage",
+        params={"user_id": student.id},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["user_id"] == student.id
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_usage_filter_by_date_range(client, db_session):
+    admin = await create_test_user(db_session, username="admin_date", role="admin")
+    student = await create_test_user(db_session, username="stu_date", role="student")
+    token = await login_user(client, "admin_date")
+
+    # Both logs have created_at = now, so filtering for today should include both
+    db_session.add(AIUsageLog(
+        user_id=student.id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=100, completion_tokens=50, cost_microdollars=45,
+        latency_ms=200, status="success",
+    ))
+    db_session.add(AIUsageLog(
+        user_id=student.id, endpoint="test2", model="gpt-4o-mini",
+        prompt_tokens=80, completion_tokens=40, cost_microdollars=36,
+        latency_ms=150, status="success",
+    ))
+    await db_session.flush()
+
+    from datetime import date
+    today = date.today().isoformat()
+    resp = await client.get(
+        "/api/ai/usage",
+        params={"start_date": today, "end_date": today},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
