@@ -94,3 +94,45 @@ async def test_feedback_duplicate_rejected(client, db_session):
         headers=auth_headers(token),
     )
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_feedback_rating_too_high_rejected(client, db_session):
+    user = await create_test_user(db_session, username="teacher_rating_hi", role="teacher")
+    token = await login_user(client, "teacher_rating_hi")
+
+    log = AIUsageLog(
+        user_id=user.id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=10, completion_tokens=10, cost_microdollars=5,
+        latency_ms=100, status="success",
+    )
+    db_session.add(log)
+    await db_session.flush()
+
+    resp = await client.post(
+        "/api/ai/feedback",
+        json={"ai_usage_log_id": log.id, "rating": 2},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_feedback_rating_too_low_rejected(client, db_session):
+    user = await create_test_user(db_session, username="teacher_rating_lo", role="teacher")
+    token = await login_user(client, "teacher_rating_lo")
+
+    log = AIUsageLog(
+        user_id=user.id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=10, completion_tokens=10, cost_microdollars=5,
+        latency_ms=100, status="success",
+    )
+    db_session.add(log)
+    await db_session.flush()
+
+    resp = await client.post(
+        "/api/ai/feedback",
+        json={"ai_usage_log_id": log.id, "rating": -2},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 422
