@@ -93,7 +93,20 @@ async def seed():
             PromptTemplate(
                 name="student_qa",
                 description="学生任务问答",
-                template_text="根据以下任务信息回答学生的问题。只使用提供的上下文，不要编造信息。\n\n任务：{task_title}\n描述：{task_description}\n要求：{task_requirements}\n课程：{course_name}\n\n学生问题：{question}",
+                template_text=(
+                    "你是课程助教，根据以下任务信息回答学生的问题。\n\n"
+                    "## 可用上下文\n"
+                    "课程：{course_name}\n"
+                    "任务：{task_title}\n"
+                    "描述：{task_description}\n"
+                    "要求：{task_requirements}\n\n"
+                    "## 严格规则\n"
+                    "1. 只使用上方提供的上下文信息回答问题，不要使用外部知识\n"
+                    "2. 如果上下文信息不足以回答问题，明确回复「根据当前任务信息无法回答这个问题，建议咨询任课教师。」\n"
+                    "3. 不要编造、推测或补充任何上下文中未提及的内容\n"
+                    "4. 用简洁清晰的中文回答\n\n"
+                    "学生问题：{question}"
+                ),
                 variables=json.dumps(["task_title", "task_description", "task_requirements", "course_name", "question"]),
             ),
             PromptTemplate(
