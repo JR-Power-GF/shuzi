@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     LOCKOUT_THRESHOLD: int = 5
     LOCKOUT_DURATION_MINUTES: int = 30
     TOTAL_SUBMISSION_SIZE_LIMIT_MB: int = 100
+    AI_API_KEY: str = ""
+    AI_MODEL: str = "gpt-4o-mini"
+    AI_BASE_URL: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
