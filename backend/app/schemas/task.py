@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TaskCreate(BaseModel):
@@ -50,9 +50,9 @@ class TaskResponse(BaseModel):
 
 
 class TaskDescriptionGenerateRequest(BaseModel):
-    title: str
-    course_name: str = "实训课程"
-    language: str = "中文"
+    title: str = Field(..., min_length=1, max_length=200)
+    course_name: str = Field("实训课程", max_length=100)
+    language: str = Field("中文", max_length=20)
 
 
 class TaskDescriptionGenerateResponse(BaseModel):

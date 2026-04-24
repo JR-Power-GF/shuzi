@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
@@ -19,7 +18,7 @@ from app.schemas.task import (
     TaskCreate, TaskDescriptionGenerateRequest, TaskDescriptionGenerateResponse,
     TaskResponse, TaskUpdate,
 )
-from app.services.ai import AIServiceError, BudgetExceededError, MockProvider, get_ai_service
+from app.services.ai import AIServiceError, BudgetExceededError, get_ai_service
 from app.services.prompts import PromptService
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
