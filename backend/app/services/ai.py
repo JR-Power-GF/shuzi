@@ -111,3 +111,43 @@ class AIService:
         db.add(log)
         await db.flush()
         return log.id
+
+    async def generate(
+        self, *, db: AsyncSession, prompt: str, user_id: int,
+        role: str, endpoint: str = "",
+    ) -> dict:
+        config = await self._get_config(db)
+        await self.check_budget(db, user_id, role, config)
+
+        model = config["model"]
+        start = time.time()
+        try:
+            response = await self.provider.generate(prompt, model)
+            latency_ms = int((time.time() - start) * 1000)
+            cost = int(
+                response.prompt_tokens * config.get("price_input", 0.15)
+                + response.completion_tokens * config.get("price_output", 0.60)
+            )
+            log_id = await self._log_usage(
+                db, user_id=user_id, endpoint=endpoint, model=model,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                cost_microdollars=cost, latency_ms=latency_ms, status="success",
+            )
+            return {
+                "text": response.text,
+                "usage_log_id": log_id,
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
+                "cost_microdollars": cost,
+            }
+        except (BudgetExceededError, AIServiceError):
+            raise
+        except Exception as e:
+            latency_ms = int((time.time() - start) * 1000)
+            await self._log_usage(
+                db, user_id=user_id, endpoint=endpoint, model=model,
+                prompt_tokens=0, completion_tokens=0, cost_microdollars=0,
+                latency_ms=latency_ms, status="error",
+            )
+            raise AIServiceError("AI 服务暂时不可用") from e

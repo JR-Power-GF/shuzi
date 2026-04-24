@@ -1,9 +1,11 @@
 import pytest
 import json
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_config import AIConfig
-from app.services.ai import AIService, MockProvider, BudgetExceededError
+from app.models.ai_usage_log import AIUsageLog
+from app.services.ai import AIService, AIServiceError, BudgetExceededError, MockProvider, AIResponse
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -112,3 +114,94 @@ async def test_log_usage_error(db_session: AsyncSession):
     log = result.scalar_one()
     assert log.status == "error"
     assert log.prompt_tokens == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_success(db_session: AsyncSession):
+    from tests.helpers import create_test_user
+    user = await create_test_user(db_session, username="gen_teacher", role="teacher")
+    service = AIService(provider=MockProvider(response_text="这是生成的文本"))
+    result = await service.generate(
+        db=db_session,
+        prompt="生成一个任务描述",
+        user_id=user.id,
+        role="teacher",
+        endpoint="test_endpoint",
+    )
+    assert result["text"] == "这是生成的文本"
+    assert result["usage_log_id"] is not None
+    assert result["prompt_tokens"] > 0
+
+    result2 = await db_session.execute(
+        select(AIUsageLog).where(AIUsageLog.id == result["usage_log_id"])
+    )
+    log = result2.scalar_one()
+    assert log.endpoint == "test_endpoint"
+    assert log.status == "success"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_provider_error(db_session: AsyncSession):
+    from tests.helpers import create_test_user
+    user = await create_test_user(db_session, username="err_teacher", role="teacher")
+
+    class FailingProvider:
+        async def generate(self, prompt: str, model: str) -> AIResponse:
+            raise RuntimeError("provider timeout")
+
+    service = AIService(provider=FailingProvider())
+    with pytest.raises(AIServiceError):
+        await service.generate(
+            db=db_session, prompt="test", user_id=user.id, role="teacher", endpoint="test",
+        )
+
+    result = await db_session.execute(
+        select(AIUsageLog).where(AIUsageLog.status == "error")
+    )
+    error_log = result.scalar_one_or_none()
+    assert error_log is not None
+    assert error_log.prompt_tokens == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_budget_exceeded(db_session: AsyncSession):
+    from tests.helpers import create_test_user
+    user = await create_test_user(db_session, username="budget_stu", role="student")
+
+    db_session.add(AIUsageLog(
+        user_id=user.id, endpoint="test", model="gpt-4o-mini",
+        prompt_tokens=50000, completion_tokens=0, cost_microdollars=0,
+        latency_ms=100, status="success",
+    ))
+    await db_session.flush()
+
+    service = AIService(provider=MockProvider())
+    with pytest.raises(BudgetExceededError):
+        await service.generate(
+            db=db_session, prompt="test", user_id=user.id, role="student", endpoint="test",
+        )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_cost_calculation(db_session: AsyncSession):
+    from tests.helpers import create_test_user
+    user = await create_test_user(db_session, username="cost_admin", role="admin")
+
+    class FixedTokenProvider:
+        async def generate(self, prompt: str, model: str) -> AIResponse:
+            return AIResponse(text="response", prompt_tokens=500, completion_tokens=200)
+
+    db_session.add(AIConfig(key="price_input", value="0.15"))
+    db_session.add(AIConfig(key="price_output", value="0.60"))
+    await db_session.flush()
+
+    service = AIService(provider=FixedTokenProvider())
+    result = await service.generate(
+        db=db_session, prompt="test", user_id=user.id, role="admin", endpoint="cost_test",
+    )
+
+    log_result = await db_session.execute(
+        select(AIUsageLog).where(AIUsageLog.id == result["usage_log_id"])
+    )
+    log = log_result.scalar_one()
+    assert log.cost_microdollars == int(500 * 0.15 + 200 * 0.60)
