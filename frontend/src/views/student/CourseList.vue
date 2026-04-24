@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div v-loading="loading">
     <h3 style="margin-bottom: 16px">我的课程</h3>
     <div v-if="courses.length === 0 && !loading" style="text-align: center; padding: 40px; color: #909399">
       暂无课程，请等待教师创建课程并分配任务

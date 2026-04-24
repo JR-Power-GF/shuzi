@@ -3,12 +3,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
 from app.models.course import Course
+from app.models.grade import Grade
 from app.models.submission import Submission
 from app.models.task import Task
 from app.models.user import User
@@ -59,7 +61,13 @@ async def create_course(
         teacher_id=current_user["id"],
     )
     db.add(course)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="同一学期已存在同名课程",
+        )
 
     # Fetch teacher name
     result = await db.execute(select(User.real_name).where(User.id == current_user["id"]))
@@ -85,7 +93,13 @@ async def update_course(
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(course, field, value)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="同一学期已存在同名课程",
+        )
 
     # Fetch teacher name
     teacher_result = await db.execute(
@@ -205,7 +219,9 @@ async def student_course_cards(
 
         # Count graded submissions (submissions with a Grade record)
         graded_result = await db.execute(
-            select(func.count()).select_from(Submission).where(
+            select(func.count()).select_from(Submission).join(
+                Grade, Grade.submission_id == Submission.id
+            ).where(
                 Submission.task_id.in_(
                     select(Task.id).where(
                         Task.course_id == course.id,
@@ -324,7 +340,10 @@ async def archive_course(
 
 
 @router.delete("/{course_id}")
-async def delete_course(course_id: int):
+async def delete_course(
+    course_id: int,
+    current_user: dict = Depends(get_current_user),
+):
     raise HTTPException(
         status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
         detail="课程不支持删除，请使用归档",
