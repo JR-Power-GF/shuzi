@@ -379,3 +379,48 @@ async def test_course_detail_with_tasks(client, db_session):
     assert data["name"] == "课程A"
     assert len(data["tasks"]) == 1
     assert data["tasks"][0]["title"] == "任务1"
+
+
+# --- Task 12: Student Course Cards with Progress ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_student_course_cards_with_progress(client, db_session):
+    teacher = await create_test_user(db_session, username="teacher1", role="teacher")
+    cls = await create_test_class(db_session, name="1班", teacher_id=teacher.id)
+    await create_test_user(db_session, username="stu1", role="student", primary_class_id=cls.id)
+    token_t = await login_user(client, "teacher1")
+    token_s = await login_user(client, "stu1")
+
+    from tests.helpers import create_test_task
+
+    create_resp = await client.post(
+        "/api/courses",
+        json={"name": "课程A", "semester": "2026-2027-1"},
+        headers=auth_headers(token_t),
+    )
+    course_id = create_resp.json()["id"]
+
+    task1 = await create_test_task(db_session, title="任务1", class_id=cls.id, created_by=teacher.id)
+    task1.course_id = course_id
+    task2 = await create_test_task(db_session, title="任务2", class_id=cls.id, created_by=teacher.id)
+    task2.course_id = course_id
+    await db_session.flush()
+
+    resp = await client.get("/api/courses/my", headers=auth_headers(token_s))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "课程A"
+    assert data[0]["task_count"] == 2
+    assert data[0]["submitted_count"] == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_student_course_cards_empty(client, db_session):
+    await create_test_user(db_session, username="stu1", role="student")
+    token = await login_user(client, "stu1")
+
+    resp = await client.get("/api/courses/my", headers=auth_headers(token))
+    assert resp.status_code == 200
+    assert resp.json() == []

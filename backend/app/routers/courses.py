@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -8,9 +9,10 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
 from app.models.course import Course
+from app.models.submission import Submission
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.course import CourseCreate, CourseDetailResponse, CourseResponse, CourseUpdate
+from app.schemas.course import CourseCreate, CourseDetailResponse, CourseProgressResponse, CourseResponse, CourseUpdate
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -147,6 +149,102 @@ async def list_courses(
         )
         task_count = task_count_result.scalar()
         response.append(_course_to_response(course, teacher_name, task_count))
+    return response
+
+
+@router.get("/my", response_model=list[CourseProgressResponse])
+async def student_course_cards(
+    current_user: dict = Depends(require_role("student")),
+    db: AsyncSession = Depends(get_db),
+):
+    # 1. Get student's class_id
+    user_result = await db.execute(
+        select(User.primary_class_id).where(User.id == current_user["id"])
+    )
+    class_id = user_result.scalar_one_or_none()
+    if not class_id:
+        return []
+
+    # 2. Find active courses via task-class join
+    courses_result = await db.execute(
+        select(Course)
+        .join(Task, Task.course_id == Course.id)
+        .where(Task.class_id == class_id)
+        .where(Course.status == "active")
+        .distinct()
+        .order_by(Course.semester.desc(), Course.name)
+    )
+    courses = courses_result.scalars().all()
+
+    # 3. For each course, compute progress
+    response = []
+    for course in courses:
+        # Count active tasks in this course for this class
+        task_count_result = await db.execute(
+            select(func.count()).select_from(Task).where(
+                Task.course_id == course.id,
+                Task.class_id == class_id,
+                Task.status == "active",
+            )
+        )
+        task_count = task_count_result.scalar()
+
+        # Count student's submissions for tasks in this course
+        submitted_result = await db.execute(
+            select(func.count()).select_from(Submission).where(
+                Submission.task_id.in_(
+                    select(Task.id).where(
+                        Task.course_id == course.id,
+                        Task.class_id == class_id,
+                    )
+                ),
+                Submission.student_id == current_user["id"],
+            )
+        )
+        submitted_count = submitted_result.scalar()
+
+        # Count graded submissions (submissions with a Grade record)
+        graded_result = await db.execute(
+            select(func.count()).select_from(Submission).where(
+                Submission.task_id.in_(
+                    select(Task.id).where(
+                        Task.course_id == course.id,
+                        Task.class_id == class_id,
+                    )
+                ),
+                Submission.student_id == current_user["id"],
+            )
+        )
+        graded_count = graded_result.scalar()
+
+        # Nearest future deadline
+        deadline_result = await db.execute(
+            select(func.min(Task.deadline)).where(
+                Task.course_id == course.id,
+                Task.class_id == class_id,
+                Task.status == "active",
+                Task.deadline > datetime.datetime.utcnow(),
+            )
+        )
+        nearest_deadline = deadline_result.scalar_one_or_none()
+
+        # Teacher name
+        teacher_name_result = await db.execute(
+            select(User.real_name).where(User.id == course.teacher_id)
+        )
+        teacher_name = teacher_name_result.scalar_one()
+
+        response.append(CourseProgressResponse(
+            id=course.id,
+            name=course.name,
+            description=course.description,
+            semester=course.semester,
+            teacher_name=teacher_name,
+            task_count=task_count,
+            submitted_count=submitted_count,
+            graded_count=graded_count,
+            nearest_deadline=nearest_deadline,
+        ))
     return response
 
 
