@@ -6,7 +6,24 @@
         <el-input v-model="form.title" />
       </el-form-item>
       <el-form-item label="任务描述">
-        <el-input v-model="form.description" type="textarea" :rows="3" />
+        <div style="width: 100%">
+          <div style="margin-bottom: 8px">
+            <el-button
+              type="primary"
+              plain
+              size="small"
+              @click="generateDescription"
+              :loading="generating"
+              :disabled="!form.title"
+            >
+              AI 生成描述
+            </el-button>
+            <span v-if="!form.title" style="color: #909399; font-size: 12px; margin-left: 8px">
+              请先输入任务标题
+            </span>
+          </div>
+          <el-input v-model="form.description" type="textarea" :rows="3" />
+        </div>
       </el-form-item>
       <el-form-item label="实验要求">
         <el-input v-model="form.requirements" type="textarea" :rows="3" />
@@ -43,6 +60,39 @@
         <el-button @click="$router.back()">取消</el-button>
       </el-form-item>
     </el-form>
+    <el-dialog v-model="showAIDialog" title="AI 生成的任务描述" width="700px" :close-on-click-modal="false">
+      <el-input
+        v-model="generatedDescription"
+        type="textarea"
+        :rows="15"
+        placeholder="AI 正在生成..."
+      />
+      <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between">
+        <div>
+          <span style="color: #909399; font-size: 13px">对生成结果满意吗？</span>
+          <el-button-group style="margin-left: 8px">
+            <el-button
+              size="small"
+              :type="aiFeedback === 1 ? 'primary' : 'default'"
+              @click="submitAIFeedback(1)"
+            >
+              有用
+            </el-button>
+            <el-button
+              size="small"
+              :type="aiFeedback === -1 ? 'danger' : 'default'"
+              @click="submitAIFeedback(-1)"
+            >
+              待改进
+            </el-button>
+          </el-button-group>
+        </div>
+        <div>
+          <el-button @click="showAIDialog = false">取消</el-button>
+          <el-button type="primary" @click="confirmAIDescription">确认使用</el-button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -55,6 +105,11 @@ import api from '../../api'
 const router = useRouter()
 const formRef = ref(null)
 const loading = ref(false)
+const generating = ref(false)
+const showAIDialog = ref(false)
+const generatedDescription = ref('')
+const usageLogId = ref(null)
+const aiFeedback = ref(0)
 const classes = ref([])
 const courses = ref([])
 
@@ -107,6 +162,56 @@ async function handleSubmit() {
     ElMessage.error(err.response?.data?.detail || '创建失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function generateDescription() {
+  generating.value = true
+  try {
+    const courseName = form.course_id
+      ? courses.value.find(c => c.id === form.course_id)?.name || '实训课程'
+      : '实训课程'
+
+    const resp = await api.post('/tasks/generate-description', {
+      title: form.title,
+      course_name: courseName,
+      language: '中文',
+    })
+
+    generatedDescription.value = resp.data.description
+    usageLogId.value = resp.data.usage_log_id
+    aiFeedback.value = 0
+    showAIDialog.value = true
+  } catch (err) {
+    if (err.response?.status === 429) {
+      ElMessage.error('今日 AI 调用额度已用完')
+    } else if (err.response?.status === 502) {
+      ElMessage.error('AI 服务暂时不可用，请稍后再试')
+    } else {
+      ElMessage.error(err.response?.data?.detail || 'AI 生成失败')
+    }
+  } finally {
+    generating.value = false
+  }
+}
+
+function confirmAIDescription() {
+  form.description = generatedDescription.value
+  showAIDialog.value = false
+  ElMessage.success('已填入 AI 生成的描述，可继续编辑')
+}
+
+async function submitAIFeedback(rating) {
+  if (!usageLogId.value) return
+  try {
+    await api.post('/ai/feedback', {
+      ai_usage_log_id: usageLogId.value,
+      rating: rating,
+    })
+    aiFeedback.value = rating
+    ElMessage.success('感谢您的反馈')
+  } catch {
+    ElMessage.error('反馈提交失败')
   }
 }
 </script>
