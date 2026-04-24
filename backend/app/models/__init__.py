@@ -6,6 +6,10 @@ from app.models.submission import Submission
 from app.models.submission_file import SubmissionFile
 from app.models.grade import Grade
 from app.models.refresh_token import RefreshToken
+from app.models.ai_config import AIConfig
+from app.models.ai_usage_log import AIUsageLog
+from app.models.ai_feedback import AIFeedback
+from app.models.prompt_template import PromptTemplate
 
 __all__ = [
     "User",
@@ -16,4 +20,8 @@ __all__ = [
     "SubmissionFile",
     "Grade",
     "RefreshToken",
+    "AIConfig",
+    "AIUsageLog",
+    "AIFeedback",
+    "PromptTemplate",
 ]
