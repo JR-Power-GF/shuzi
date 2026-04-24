@@ -1,3 +1,4 @@
+from datetime import datetime as dt
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
@@ -67,4 +68,61 @@ async def submit_feedback(
         rating=feedback.rating,
         comment=feedback.comment,
         created_at=feedback.created_at,
+    )
+
+
+@router.get("/usage", response_model=AIUsageWithBudget)
+async def query_usage(
+    user_id: Optional[int] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(AIUsageLog)
+    if user_id:
+        query = query.where(AIUsageLog.user_id == user_id)
+    if start_date:
+        query = query.where(AIUsageLog.created_at >= dt.fromisoformat(start_date))
+    if end_date:
+        query = query.where(AIUsageLog.created_at <= dt.fromisoformat(end_date))
+
+    total_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = total_result.scalar()
+
+    result = await db.execute(query.order_by(AIUsageLog.id.desc()).limit(100))
+    logs = result.scalars().all()
+
+    items = [
+        AIUsageOut(
+            id=l.id, user_id=l.user_id, endpoint=l.endpoint, model=l.model,
+            prompt_tokens=l.prompt_tokens, completion_tokens=l.completion_tokens,
+            cost_microdollars=l.cost_microdollars, latency_ms=l.latency_ms,
+            status=l.status, created_at=l.created_at,
+        ) for l in logs
+    ]
+
+    target_user_id = user_id or current_user["id"]
+    user_result = await db.execute(select(User.role).where(User.id == target_user_id))
+    role = user_result.scalar_one_or_none() or "student"
+
+    config_result = await db.execute(select(AIConfig))
+    configs = {c.key: c.value for c in config_result.scalars().all()}
+    budget_limit = int(configs.get(f"budget_{role}", "50000"))
+
+    today_start = dt.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    used_result = await db.execute(
+        select(func.coalesce(func.sum(
+            AIUsageLog.prompt_tokens + AIUsageLog.completion_tokens
+        ), 0)).where(
+            AIUsageLog.user_id == target_user_id,
+            AIUsageLog.created_at >= today_start,
+        )
+    )
+    budget_used = int(used_result.scalar())
+
+    return AIUsageWithBudget(
+        items=items, total=total,
+        budget_limit=budget_limit, budget_used=budget_used,
+        budget_remaining=max(0, budget_limit - budget_used),
     )
