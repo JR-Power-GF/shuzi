@@ -12,6 +12,9 @@
         router
       >
         <template v-if="auth.userRole === 'teacher'">
+          <el-menu-item index="/teacher/courses">
+            <span>课程管理</span>
+          </el-menu-item>
           <el-menu-item index="/teacher/tasks">
             <span>我的任务</span>
           </el-menu-item>
@@ -20,6 +23,9 @@
           </el-menu-item>
         </template>
         <template v-if="auth.userRole === 'student'">
+          <el-menu-item index="/student/courses">
+            <span>我的课程</span>
+          </el-menu-item>
           <el-menu-item index="/student/tasks">
             <span>我的任务</span>
           </el-menu-item>
@@ -30,6 +36,9 @@
           </el-menu-item>
           <el-menu-item index="/admin/classes">
             <span>班级管理</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/courses">
+            <span>课程管理</span>
           </el-menu-item>
         </template>
       </el-menu>

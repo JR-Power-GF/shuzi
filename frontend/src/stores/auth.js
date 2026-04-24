@@ -34,7 +34,7 @@ export const useAuthStore = defineStore('auth', () => {
     switch (user.value.role) {
       case 'admin': return '/admin/users'
       case 'teacher': return '/teacher/tasks'
-      case 'student': return '/student/tasks'
+      case 'student': return '/student/courses'
       default: return '/login'
     }
   }

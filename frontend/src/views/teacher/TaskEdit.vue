@@ -11,6 +11,11 @@
       <el-form-item label="实验要求">
         <el-input v-model="form.requirements" type="textarea" :rows="3" />
       </el-form-item>
+      <el-form-item label="关联课程">
+        <el-select v-model="form.course_id" placeholder="选择课程（可选）" clearable>
+          <el-option v-for="c in courses" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="截止时间" prop="deadline">
         <el-date-picker v-model="form.deadline" type="datetime" placeholder="选择截止时间" />
       </el-form-item>
@@ -45,8 +50,9 @@ const loading = ref(false)
 const saving = ref(false)
 const formRef = ref(null)
 const fileTypes = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.jpg', '.png', '.txt', '.csv']
+const courses = ref([])
 
-const form = reactive({ title: '', description: '', requirements: '', deadline: '', allowed_file_types: [], max_file_size_mb: 50 })
+const form = reactive({ title: '', description: '', requirements: '', deadline: '', allowed_file_types: [], max_file_size_mb: 50, course_id: null })
 const rules = {
   title: [{ required: true, message: '请输入任务标题', trigger: 'blur' }],
   deadline: [{ required: true, message: '请选择截止时间', trigger: 'change' }],
@@ -64,7 +70,10 @@ onMounted(async () => {
       deadline: task.value.deadline,
       allowed_file_types: task.value.allowed_file_types || [],
       max_file_size_mb: task.value.max_file_size_mb || 50,
+      course_id: task.value.course_id || null,
     })
+    const courseResp = await api.get('/courses')
+    courses.value = courseResp.data.filter(c => c.status === 'active')
   } catch { ElMessage.error('获取任务详情失败') }
   finally { loading.value = false }
 })

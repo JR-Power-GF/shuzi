@@ -16,6 +16,11 @@
           <el-option v-for="cls in classes" :key="cls.id" :label="cls.name" :value="cls.id" />
         </el-select>
       </el-form-item>
+      <el-form-item label="关联课程">
+        <el-select v-model="form.course_id" placeholder="选择课程（可选）" clearable>
+          <el-option v-for="c in courses" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="截止时间" prop="deadline">
         <el-date-picker v-model="form.deadline" type="datetime" placeholder="选择截止时间" />
       </el-form-item>
@@ -51,6 +56,7 @@ const router = useRouter()
 const formRef = ref(null)
 const loading = ref(false)
 const classes = ref([])
+const courses = ref([])
 
 const fileTypes = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.jpg', '.png', '.txt', '.csv']
 
@@ -59,6 +65,7 @@ const form = reactive({
   description: '',
   requirements: '',
   class_id: '',
+  course_id: null,
   deadline: '',
   allowed_file_types: ['.pdf', '.docx'],
   max_file_size_mb: 50,
@@ -77,6 +84,8 @@ onMounted(async () => {
   try {
     const resp = await api.get('/classes/my')
     classes.value = resp.data
+    const courseResp = await api.get('/courses')
+    courses.value = courseResp.data.filter(c => c.status === 'active')
   } catch {
     ElMessage.error('获取班级列表失败')
   }

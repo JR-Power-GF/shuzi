@@ -76,6 +76,36 @@ const routes = [
         component: () => import('../views/teacher/TaskEdit.vue'),
         meta: { roles: ['teacher'] },
       },
+      {
+        path: 'teacher/courses',
+        name: 'TeacherCourseList',
+        component: () => import('../views/teacher/CourseList.vue'),
+        meta: { roles: ['teacher'] },
+      },
+      {
+        path: 'teacher/courses/create',
+        name: 'TeacherCourseCreate',
+        component: () => import('../views/teacher/CourseCreate.vue'),
+        meta: { roles: ['teacher'] },
+      },
+      {
+        path: 'teacher/courses/:id',
+        name: 'TeacherCourseDetail',
+        component: () => import('../views/teacher/CourseDetail.vue'),
+        meta: { roles: ['teacher'] },
+      },
+      {
+        path: 'admin/courses',
+        name: 'AdminCourseList',
+        component: () => import('../views/admin/CourseList.vue'),
+        meta: { roles: ['admin'] },
+      },
+      {
+        path: 'student/courses',
+        name: 'StudentCourseList',
+        component: () => import('../views/student/CourseList.vue'),
+        meta: { roles: ['student'] },
+      },
     ],
   },
 ]
