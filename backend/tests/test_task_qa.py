@@ -75,3 +75,67 @@ async def test_qa_success(client, db_session, setup_qa_env):
     assert isinstance(data["usage_log_id"], int)
     assert "prompt_tokens" in data
     assert "completion_tokens" in data
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_teacher_forbidden(client, db_session, setup_qa_env):
+    env = setup_qa_env
+    token = await login_user(client, "teacher_qa")
+
+    resp = await client.post(
+        f"/api/tasks/{env['task'].id}/qa",
+        json={"question": "测试问题"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_other_class_student_forbidden(client, db_session, setup_qa_env):
+    env = setup_qa_env
+    token = await login_user(client, "student_other_qa")
+
+    resp = await client.post(
+        f"/api/tasks/{env['task'].id}/qa",
+        json={"question": "测试问题"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_task_not_found(client, db_session, setup_qa_env):
+    token = await login_user(client, "student_qa")
+
+    resp = await client.post(
+        "/api/tasks/99999/qa",
+        json={"question": "测试问题"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_template_missing(client, db_session):
+    student = await create_test_user(db_session, username="student_notpl", role="student")
+    teacher = await create_test_user(db_session, username="teacher_notpl_qa", role="teacher")
+    cls = Class(name="无模板班", semester="2025-2026-2", teacher_id=teacher.id)
+    db_session.add(cls)
+    await db_session.flush()
+    student.primary_class_id = cls.id
+    await db_session.flush()
+    task = Task(
+        title="测试任务", class_id=cls.id, created_by=teacher.id,
+        deadline="2026-12-31 23:59:59", allowed_file_types=json.dumps([".pdf"]),
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    token = await login_user(client, "student_notpl")
+    resp = await client.post(
+        f"/api/tasks/{task.id}/qa",
+        json={"question": "测试问题"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "问答模板未配置"
