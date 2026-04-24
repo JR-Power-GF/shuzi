@@ -16,7 +16,7 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import (
     TaskCreate, TaskDescriptionGenerateRequest, TaskDescriptionGenerateResponse,
-    TaskResponse, TaskUpdate,
+    TaskQARequest, TaskQAResponse, TaskResponse, TaskUpdate,
 )
 from app.services.ai import AIServiceError, BudgetExceededError, get_ai_service
 from app.services.prompts import PromptService
@@ -77,6 +77,64 @@ async def generate_task_description(
         usage_log_id=result["usage_log_id"],
         prompt_tokens=result["prompt_tokens"],
         completion_tokens=result["completion_tokens"],
+    )
+
+
+@router.post("/{task_id}/qa", response_model=TaskQAResponse)
+async def ask_task_question(
+    task_id: int,
+    data: TaskQARequest,
+    current_user: dict = Depends(require_role(["student"])),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    user_result = await db.execute(
+        select(User.primary_class_id).where(User.id == current_user["id"])
+    )
+    class_id = user_result.scalar_one_or_none()
+    if not class_id or class_id != task.class_id:
+        raise HTTPException(status_code=403, detail="无权访问该任务")
+
+    course_name = ""
+    if task.course_id:
+        course_result = await db.execute(select(Course.name).where(Course.id == task.course_id))
+        course_name = course_result.scalar_one_or_none() or ""
+
+    prompt_service = PromptService()
+    try:
+        prompt_text = await prompt_service.fill_template(
+            db, "student_qa",
+            {
+                "task_title": task.title or "",
+                "task_description": task.description or "",
+                "task_requirements": task.requirements or "",
+                "course_name": course_name,
+                "question": data.question,
+            },
+        )
+    except ValueError:
+        raise HTTPException(status_code=500, detail="问答模板未配置")
+
+    service = get_ai_service()
+    try:
+        ai_result = await service.generate(
+            db=db, prompt=prompt_text, user_id=current_user["id"],
+            role=current_user["role"], endpoint="student_qa",
+        )
+    except BudgetExceededError:
+        raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
+    except AIServiceError:
+        return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
+
+    return TaskQAResponse(
+        answer=ai_result["text"],
+        usage_log_id=ai_result["usage_log_id"],
+        prompt_tokens=ai_result["prompt_tokens"],
+        completion_tokens=ai_result["completion_tokens"],
     )
 
 
