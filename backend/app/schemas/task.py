@@ -60,3 +60,14 @@ class TaskDescriptionGenerateResponse(BaseModel):
     usage_log_id: int
     prompt_tokens: int
     completion_tokens: int
+
+
+class TaskQARequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+
+
+class TaskQAResponse(BaseModel):
+    answer: str
+    usage_log_id: int
+    prompt_tokens: int
+    completion_tokens: int
