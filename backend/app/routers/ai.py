@@ -126,3 +126,70 @@ async def query_usage(
         budget_limit=budget_limit, budget_used=budget_used,
         budget_remaining=max(0, budget_limit - budget_used),
     )
+
+
+@router.get("/stats/feedback", response_model=AIFeedbackSummary)
+async def get_feedback_summary(
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    pos_result = await db.execute(
+        select(func.count()).select_from(AIFeedback).where(AIFeedback.rating > 0)
+    )
+    neg_result = await db.execute(
+        select(func.count()).select_from(AIFeedback).where(AIFeedback.rating < 0)
+    )
+    recent_neg = await db.execute(
+        select(AIFeedback).where(AIFeedback.rating < 0).order_by(AIFeedback.created_at.desc()).limit(10)
+    )
+    recent = [
+        {"id": f.id, "comment": f.comment, "created_at": f.created_at.isoformat()}
+        for f in recent_neg.scalars().all()
+    ]
+    return AIFeedbackSummary(
+        positive_count=pos_result.scalar(),
+        negative_count=neg_result.scalar(),
+        recent_negative=recent,
+    )
+
+
+@router.get("/stats", response_model=AIStatsOut)
+async def get_stats(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(AIUsageLog)
+    if start_date:
+        query = query.where(AIUsageLog.created_at >= dt.fromisoformat(start_date))
+    if end_date:
+        query = query.where(AIUsageLog.created_at <= dt.fromisoformat(end_date))
+
+    sub = query.subquery()
+    agg = await db.execute(
+        select(
+            func.count().label("total"),
+            func.coalesce(func.sum(sub.c.prompt_tokens), 0).label("pt"),
+            func.coalesce(func.sum(sub.c.completion_tokens), 0).label("ct"),
+            func.coalesce(func.sum(sub.c.cost_microdollars), 0).label("cost"),
+            func.coalesce(func.avg(sub.c.latency_ms), 0).label("avg_lat"),
+        ).select_from(sub)
+    )
+    row = agg.one()
+
+    success_sub = query.where(AIUsageLog.status == "success").subquery()
+    success_count = await db.execute(
+        select(func.count()).select_from(success_sub)
+    )
+    total = row.total or 0
+    success_rate = (success_count.scalar() / total) if total > 0 else 0.0
+
+    return AIStatsOut(
+        total_calls=total,
+        total_prompt_tokens=int(row.pt),
+        total_completion_tokens=int(row.ct),
+        total_cost_microdollars=int(row.cost),
+        success_rate=round(success_rate, 2),
+        avg_latency_ms=round(float(row.avg_lat), 1),
+    )
