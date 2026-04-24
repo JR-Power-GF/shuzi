@@ -219,3 +219,40 @@ def test_get_ai_service_returns_mock_by_default():
     from app.services.ai import get_ai_service
     service = get_ai_service()
     assert isinstance(service.provider, MockProvider)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_budget_teacher_default(db_session: AsyncSession):
+    from tests.helpers import create_test_user
+
+    teacher = await create_test_user(db_session, username="budget_teacher", role="teacher")
+    service = AIService(provider=MockProvider())
+    config = await service._get_config(db_session)
+    remaining = await service.check_budget(db_session, teacher.id, "teacher", config)
+    assert remaining == 200000
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_budget_admin_default(db_session: AsyncSession):
+    from tests.helpers import create_test_user
+
+    admin = await create_test_user(db_session, username="budget_admin", role="admin")
+    service = AIService(provider=MockProvider())
+    config = await service._get_config(db_session)
+    remaining = await service.check_budget(db_session, admin.id, "admin", config)
+    assert remaining == 500000
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_budget_custom_override(db_session: AsyncSession):
+    """Verify that custom budget in ai_config overrides the default."""
+    from tests.helpers import create_test_user
+
+    user = await create_test_user(db_session, username="budget_custom", role="student")
+    db_session.add(AIConfig(key="budget_student", value="1000"))
+    await db_session.flush()
+
+    service = AIService(provider=MockProvider())
+    config = await service._get_config(db_session)
+    remaining = await service.check_budget(db_session, user.id, "student", config)
+    assert remaining == 1000

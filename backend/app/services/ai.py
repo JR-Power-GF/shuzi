@@ -62,8 +62,9 @@ class AIService:
             "price_output": 0.60,
         }
         for row in rows:
-            if row.key in ("budget_admin", "budget_teacher", "budget_student",
-                           "price_input", "price_output"):
+            if row.key in ("budget_admin", "budget_teacher", "budget_student"):
+                config[row.key] = int(row.value)
+            elif row.key in ("price_input", "price_output"):
                 config[row.key] = float(row.value)
             else:
                 config[row.key] = row.value
