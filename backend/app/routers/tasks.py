@@ -3,9 +3,11 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
@@ -13,7 +15,12 @@ from app.models.course import Course
 from app.models.submission import Submission
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
+from app.schemas.task import (
+    TaskCreate, TaskDescriptionGenerateRequest, TaskDescriptionGenerateResponse,
+    TaskResponse, TaskUpdate,
+)
+from app.services.ai import AIServiceError, BudgetExceededError, MockProvider, get_ai_service
+from app.services.prompts import PromptService
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -36,6 +43,41 @@ def _task_to_response(task: Task, class_name: str) -> TaskResponse:
         status=task.status,
         grades_published=task.grades_published,
         created_at=task.created_at,
+    )
+
+
+@router.post("/generate-description", response_model=TaskDescriptionGenerateResponse)
+async def generate_task_description(
+    data: TaskDescriptionGenerateRequest,
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    prompt_service = PromptService()
+    try:
+        prompt_text = await prompt_service.fill_template(
+            db, "task_description",
+            {"course_name": data.course_name, "topic": data.title, "language": data.language},
+        )
+    except ValueError:
+        raise HTTPException(status_code=500, detail="任务描述模板未配置")
+
+    service = get_ai_service()
+    try:
+        result = await service.generate(
+            db=db, prompt=prompt_text, user_id=current_user["id"],
+            role=current_user["role"], endpoint="generate_description",
+        )
+    except BudgetExceededError:
+        raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
+    except AIServiceError:
+        # JSONResponse (not HTTPException) so get_db() commits the error log
+        return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
+
+    return TaskDescriptionGenerateResponse(
+        description=result["text"],
+        usage_log_id=result["usage_log_id"],
+        prompt_tokens=result["prompt_tokens"],
+        completion_tokens=result["completion_tokens"],
     )
 
 
