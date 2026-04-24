@@ -297,6 +297,7 @@ Use these as the source of truth:
 - `openspec/specs/`
 - `openspec/changes/`
 - `openspec/archive/` if present
+- `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (module, tags, problem_type)
 
 ### 5.2 Naming
 Change names should be:
