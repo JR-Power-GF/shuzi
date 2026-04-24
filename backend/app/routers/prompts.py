@@ -1,6 +1,6 @@
 import json
 import re
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,7 +46,7 @@ async def update_template(
     if invalid:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid variables: {', '.join(sorted(invalid))}",
+            detail=f"无效的变量: {', '.join(sorted(invalid))}",
         )
 
     template.template_text = data.template_text

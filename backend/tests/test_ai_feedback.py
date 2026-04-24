@@ -66,7 +66,7 @@ async def test_feedback_cross_user_forbidden(client, db_session):
         json={"ai_usage_log_id": log.id, "rating": 1},
         headers=auth_headers(token2),
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio(loop_scope="session")

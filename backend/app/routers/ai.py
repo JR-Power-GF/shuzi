@@ -1,24 +1,24 @@
-from datetime import datetime as dt
+from datetime import date, datetime as dt, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
-from app.models.ai_usage_log import AIUsageLog
-from app.models.ai_feedback import AIFeedback
 from app.models.ai_config import AIConfig
+from app.models.ai_feedback import AIFeedback
+from app.models.ai_usage_log import AIUsageLog
 from app.models.user import User
-from fastapi.responses import JSONResponse
-
 from app.schemas.ai import (
     AIFeedbackIn, AIFeedbackOut, AIUsageOut, AIUsageWithBudget,
-    AIStatsOut, AIStatsByUser, AIFeedbackSummary,
+    AIStatsOut, AIFeedbackSummary,
     AIConfigOut, AIConfigUpdate, AITestOut,
 )
 from app.services.ai import AIService, AIServiceError, BudgetExceededError, MockProvider
-from app.config import settings
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -41,10 +41,8 @@ async def submit_feedback(
         select(AIUsageLog).where(AIUsageLog.id == data.ai_usage_log_id)
     )
     log = log_result.scalar_one_or_none()
-    if not log:
+    if not log or log.user_id != current_user["id"]:
         raise HTTPException(status_code=404, detail="AI 调用记录不存在")
-    if log.user_id != current_user["id"]:
-        raise HTTPException(status_code=403, detail="只能评价自己的 AI 调用")
 
     existing = await db.execute(
         select(AIFeedback).where(
@@ -76,18 +74,18 @@ async def submit_feedback(
 @router.get("/usage", response_model=AIUsageWithBudget)
 async def query_usage(
     user_id: Optional[int] = Query(None),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
     current_user: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(AIUsageLog)
-    if user_id:
+    if user_id is not None:
         query = query.where(AIUsageLog.user_id == user_id)
     if start_date:
-        query = query.where(AIUsageLog.created_at >= dt.fromisoformat(start_date))
+        query = query.where(AIUsageLog.created_at >= dt.combine(start_date, dt.min.time()))
     if end_date:
-        query = query.where(AIUsageLog.created_at <= dt.fromisoformat(end_date))
+        query = query.where(AIUsageLog.created_at < dt.combine(end_date + timedelta(days=1), dt.min.time()))
 
     total_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = total_result.scalar()
@@ -104,13 +102,13 @@ async def query_usage(
         ) for l in logs
     ]
 
-    target_user_id = user_id or current_user["id"]
+    target_user_id = user_id if user_id is not None else current_user["id"]
     user_result = await db.execute(select(User.role).where(User.id == target_user_id))
     role = user_result.scalar_one_or_none() or "student"
 
     config_result = await db.execute(select(AIConfig))
     configs = {c.key: c.value for c in config_result.scalars().all()}
-    budget_limit = int(configs.get(f"budget_{role}", "50000"))
+    budget_limit = int(float(configs.get(f"budget_{role}", "50000")))
 
     today_start = dt.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     used_result = await db.execute(
@@ -157,16 +155,16 @@ async def get_feedback_summary(
 
 @router.get("/stats", response_model=AIStatsOut)
 async def get_stats(
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
     current_user: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(AIUsageLog)
     if start_date:
-        query = query.where(AIUsageLog.created_at >= dt.fromisoformat(start_date))
+        query = query.where(AIUsageLog.created_at >= dt.combine(start_date, dt.min.time()))
     if end_date:
-        query = query.where(AIUsageLog.created_at <= dt.fromisoformat(end_date))
+        query = query.where(AIUsageLog.created_at < dt.combine(end_date + timedelta(days=1), dt.min.time()))
 
     sub = query.subquery()
     agg = await db.execute(
@@ -211,6 +209,7 @@ async def test_ai_call(
     except BudgetExceededError:
         raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
     except AIServiceError:
+        # Use JSONResponse (not raise HTTPException) so get_db() commits the error log
         return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
 
     return AITestOut(

@@ -1,7 +1,7 @@
 import datetime
 import time
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,6 @@ class AIResponse:
     completion_tokens: int = 0
 
 
-@runtime_checkable
 class AIProvider(Protocol):
     async def generate(self, prompt: str, model: str) -> AIResponse:
         ...
@@ -141,7 +140,7 @@ class AIService:
                 "completion_tokens": response.completion_tokens,
                 "cost_microdollars": cost,
             }
-        except (BudgetExceededError, AIServiceError):
+        except AIServiceError:
             raise
         except Exception as e:
             latency_ms = int((time.time() - start) * 1000)

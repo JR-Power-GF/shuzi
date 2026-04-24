@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AIFeedbackIn(BaseModel):
     ai_usage_log_id: int
-    rating: int
+    rating: int = Field(..., ge=-1, le=1)
     comment: Optional[str] = None
 
 
@@ -46,14 +46,6 @@ class AIStatsOut(BaseModel):
     total_cost_microdollars: int
     success_rate: float
     avg_latency_ms: float
-
-
-class AIStatsByUser(BaseModel):
-    user_id: int
-    username: str
-    total_calls: int
-    total_tokens: int
-    total_cost_microdollars: int
 
 
 class AIFeedbackSummary(BaseModel):
