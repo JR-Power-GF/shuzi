@@ -8,9 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
+from app.models.ai_config import AIConfig
 from app.models.class_ import Class
+from app.models.prompt_template import PromptTemplate
 from app.models.user import User
 from app.utils.security import hash_password
+import json
 
 
 async def seed():
@@ -57,6 +60,44 @@ async def seed():
             must_change_password=True,
         )
         db.add(student)
+        await db.flush()
+
+        # AI Config defaults
+        ai_configs = [
+            AIConfig(key="model", value="gpt-4o-mini"),
+            AIConfig(key="budget_admin", value="500000"),
+            AIConfig(key="budget_teacher", value="200000"),
+            AIConfig(key="budget_student", value="50000"),
+            AIConfig(key="price_input", value="0.15"),
+            AIConfig(key="price_output", value="0.60"),
+        ]
+        for c in ai_configs:
+            db.add(c)
+
+        # Default prompt templates
+        templates = [
+            PromptTemplate(
+                name="task_description",
+                description="生成任务描述",
+                template_text="请为 {course_name} 课程生成一个关于 {topic} 的任务描述，包括目标、步骤和评分标准。语言：{language}",
+                variables=json.dumps(["course_name", "topic", "language"]),
+            ),
+            PromptTemplate(
+                name="student_qa",
+                description="学生任务问答",
+                template_text="根据以下任务信息回答学生的问题。只使用提供的上下文，不要编造信息。\n\n任务：{task_title}\n描述：{task_description}\n要求：{task_requirements}\n课程：{course_name}\n\n学生问题：{question}",
+                variables=json.dumps(["task_title", "task_description", "task_requirements", "course_name", "question"]),
+            ),
+            PromptTemplate(
+                name="training_summary",
+                description="生成实训总结",
+                template_text="请根据学生的提交记录生成一份实训总结。\n\n课程：{course_name}\n课程描述：{course_description}\n提交次数：{submission_count}\n提交内容摘要：\n{submission_summaries}\n\n请包含：学习概述、主要收获、不足与改进",
+                variables=json.dumps(["course_name", "course_description", "submission_count", "submission_summaries"]),
+            ),
+        ]
+        for t in templates:
+            db.add(t)
+
         await db.flush()
 
         await db.commit()
