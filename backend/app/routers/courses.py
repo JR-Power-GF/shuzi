@@ -2,6 +2,7 @@ import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,8 +14,12 @@ from app.models.course import Course
 from app.models.grade import Grade
 from app.models.submission import Submission
 from app.models.task import Task
+from app.models.training_summary import TrainingSummary
 from app.models.user import User
 from app.schemas.course import CourseCreate, CourseDetailResponse, CourseProgressResponse, CourseResponse, CourseUpdate
+from app.schemas.training_summary import SummaryGenerateResponse, SummarySaveRequest, SummaryResponse
+from app.services.ai import AIServiceError, BudgetExceededError, get_ai_service
+from app.services.prompts import PromptService
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -262,6 +267,93 @@ async def student_course_cards(
             nearest_deadline=nearest_deadline,
         ))
     return response
+
+
+@router.post("/{course_id}/generate-summary", response_model=SummaryGenerateResponse)
+async def generate_training_summary(
+    course_id: int,
+    current_user: dict = Depends(require_role(["student"])),
+    db: AsyncSession = Depends(get_db),
+):
+    # 1. Verify course exists
+    result = await db.execute(select(Course).where(Course.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="课程不存在")
+
+    # 2. Verify student is in a class that has tasks for this course
+    user_result = await db.execute(
+        select(User.primary_class_id).where(User.id == current_user["id"])
+    )
+    class_id = user_result.scalar_one_or_none()
+    if not class_id:
+        raise HTTPException(status_code=403, detail="未分配班级")
+
+    task_count_result = await db.execute(
+        select(func.count()).select_from(Task).where(
+            Task.course_id == course_id,
+            Task.class_id == class_id,
+        )
+    )
+    task_count = task_count_result.scalar()
+    if task_count == 0:
+        raise HTTPException(status_code=403, detail="无权访问该课程")
+
+    # 3. Query ONLY the student's OWN submissions
+    sub_result = await db.execute(
+        select(Submission, Task.title, Task.description)
+        .join(Task, Task.id == Submission.task_id)
+        .where(
+            Submission.student_id == current_user["id"],
+            Task.course_id == course_id,
+            Task.class_id == class_id,
+        )
+    )
+    submissions = sub_result.all()
+
+    if not submissions:
+        raise HTTPException(status_code=400, detail="暂无提交记录，无法生成总结")
+
+    # 4. Build submission summaries string
+    submission_lines = []
+    for idx, (sub, task_title, task_desc) in enumerate(submissions, start=1):
+        late_tag = "（迟交）" if sub.is_late else ""
+        date_str = sub.submitted_at.strftime("%Y-%m-%d %H:%M") if sub.submitted_at else ""
+        submission_lines.append(
+            f"{idx}. 任务「{task_title}」- 已提交(版本{sub.version}){late_tag}，提交时间：{date_str}"
+        )
+    submissions_context = "\n".join(submission_lines)
+
+    # 5. Fill prompt template
+    prompt_service = PromptService()
+    try:
+        prompt_text = await prompt_service.fill_template(
+            db, "training_summary", {"submissions_context": submissions_context}
+        )
+    except ValueError:
+        raise HTTPException(status_code=500, detail="总结模板未配置")
+
+    # 6. Call AI service
+    service = get_ai_service()
+    try:
+        ai_result = await service.generate(
+            db=db,
+            prompt=prompt_text,
+            user_id=current_user["id"],
+            role=current_user["role"],
+            endpoint="training_summary",
+        )
+    except BudgetExceededError:
+        raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
+    except AIServiceError:
+        return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
+
+    return SummaryGenerateResponse(
+        content=ai_result["text"],
+        usage_log_id=ai_result["usage_log_id"],
+        prompt_tokens=ai_result["prompt_tokens"],
+        completion_tokens=ai_result["completion_tokens"],
+    )
 
 
 @router.get("/{course_id}", response_model=CourseDetailResponse)
