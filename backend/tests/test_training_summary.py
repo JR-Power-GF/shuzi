@@ -9,6 +9,7 @@ from app.models.course import Course
 from app.models.prompt_template import PromptTemplate
 from app.models.submission import Submission
 from app.models.task import Task
+from app.services.ai import AIServiceError, BudgetExceededError
 from tests.helpers import create_test_user, login_user, auth_headers
 
 
@@ -338,3 +339,196 @@ async def test_generate_summary_course_not_found(
         headers=auth_headers(token),
     )
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+
+
+# ---------------------------------------------------------------------------
+# Error boundary tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_summary_budget_exceeded(
+    client, db_session, setup_summary_env
+):
+    """BudgetExceededError from AI service must produce 429."""
+    env = setup_summary_env
+    token = await login_user(client, "student_summary")
+
+    mock_service = AsyncMock()
+    mock_service.generate.side_effect = BudgetExceededError("额度用完")
+
+    with patch("app.routers.courses.get_ai_service", return_value=mock_service):
+        resp = await client.post(
+            f"/api/courses/{env['course'].id}/generate-summary",
+            headers=auth_headers(token),
+        )
+    assert resp.status_code == 429, f"Expected 429, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_summary_ai_error(client, db_session, setup_summary_env):
+    """AIServiceError from AI service must produce 502."""
+    env = setup_summary_env
+    token = await login_user(client, "student_summary")
+
+    mock_service = AsyncMock()
+    mock_service.generate.side_effect = AIServiceError("不可用")
+
+    with patch("app.routers.courses.get_ai_service", return_value=mock_service):
+        resp = await client.post(
+            f"/api/courses/{env['course'].id}/generate-summary",
+            headers=auth_headers(token),
+        )
+    assert resp.status_code == 502, f"Expected 502, got {resp.status_code}: {resp.text}"
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def setup_no_submissions_env(db_session):
+    """Environment with teacher, student, class, course, task, and template
+    but NO submissions for the student."""
+    teacher = await create_test_user(
+        db_session, username="teacher_nosub", role="teacher"
+    )
+    student = await create_test_user(
+        db_session, username="student_nosub", role="student"
+    )
+
+    cls = Class(name="NoSub测试班", semester="2025-2026-2", teacher_id=teacher.id)
+    db_session.add(cls)
+    await db_session.flush()
+
+    student.primary_class_id = cls.id
+    await db_session.flush()
+
+    course = Course(
+        name="Python程序设计-NoSub",
+        semester="2025-2026-2",
+        teacher_id=teacher.id,
+        description="无提交测试课程",
+    )
+    db_session.add(course)
+    await db_session.flush()
+
+    task = Task(
+        title="任务：无提交测试",
+        description="无提交",
+        requirements="提交代码",
+        class_id=cls.id,
+        course_id=course.id,
+        created_by=teacher.id,
+        deadline="2026-12-31 23:59:59",
+        allowed_file_types=json.dumps([".zip"]),
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    template = PromptTemplate(
+        name="training_summary",
+        description="训练总结生成",
+        template_text="根据以下学生提交信息生成训练总结。\n\n{submissions_context}",
+        variables=json.dumps(["submissions_context"]),
+    )
+    db_session.add(template)
+    await db_session.flush()
+
+    return {
+        "teacher": teacher,
+        "student": student,
+        "cls": cls,
+        "course": course,
+        "task": task,
+        "template": template,
+    }
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_summary_no_submissions(
+    client, db_session, setup_no_submissions_env
+):
+    """Student with no submissions gets 400 with '提交' in detail."""
+    env = setup_no_submissions_env
+    token = await login_user(client, "student_nosub")
+
+    resp = await client.post(
+        f"/api/courses/{env['course'].id}/generate-summary",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert "提交" in resp.json()["detail"]
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def setup_no_template_env(db_session):
+    """Environment with teacher, student, class, course, task, submission
+    but NO training_summary PromptTemplate."""
+    teacher = await create_test_user(
+        db_session, username="teacher_notmpl", role="teacher"
+    )
+    student = await create_test_user(
+        db_session, username="student_notmpl", role="student"
+    )
+
+    cls = Class(name="NoTmpl测试班", semester="2025-2026-2", teacher_id=teacher.id)
+    db_session.add(cls)
+    await db_session.flush()
+
+    student.primary_class_id = cls.id
+    await db_session.flush()
+
+    course = Course(
+        name="Python程序设计-NoTmpl",
+        semester="2025-2026-2",
+        teacher_id=teacher.id,
+        description="无模板测试课程",
+    )
+    db_session.add(course)
+    await db_session.flush()
+
+    task = Task(
+        title="任务：无模板测试",
+        description="无模板",
+        requirements="提交代码",
+        class_id=cls.id,
+        course_id=course.id,
+        created_by=teacher.id,
+        deadline="2026-12-31 23:59:59",
+        allowed_file_types=json.dumps([".zip"]),
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    submission = Submission(
+        task_id=task.id,
+        student_id=student.id,
+        version=1,
+        is_late=False,
+    )
+    db_session.add(submission)
+    await db_session.flush()
+
+    # Deliberately do NOT create a PromptTemplate for "training_summary"
+
+    return {
+        "teacher": teacher,
+        "student": student,
+        "cls": cls,
+        "course": course,
+        "task": task,
+        "submission": submission,
+    }
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_generate_summary_template_missing(
+    client, db_session, setup_no_template_env
+):
+    """Missing training_summary template produces 500 with '模板' in detail."""
+    env = setup_no_template_env
+    token = await login_user(client, "student_notmpl")
+
+    resp = await client.post(
+        f"/api/courses/{env['course'].id}/generate-summary",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 500, f"Expected 500, got {resp.status_code}: {resp.text}"
+    assert "模板" in resp.json()["detail"]
