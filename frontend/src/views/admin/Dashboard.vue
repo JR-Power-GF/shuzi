@@ -39,10 +39,15 @@
       <el-col :span="6">
         <el-card shadow="hover">
           <el-statistic
+            v-if="data.avg_score !== null"
             title="平均分"
-            :value="data.avg_score !== null ? data.avg_score : '-'"
+            :value="data.avg_score"
             :precision="1"
           />
+          <div v-else>
+            <div style="margin-bottom: 4px; color: #909399; font-size: 13px">平均分</div>
+            <div style="font-size: 20px; font-weight: 600">--</div>
+          </div>
         </el-card>
       </el-col>
       <el-col :span="6">
@@ -69,10 +74,15 @@ import api from '../../api'
 
 const loading = ref(false)
 const chartRef = ref(null)
+const resizeHandler = ref(null)
 const data = ref({
   total_users: 0, users_by_role: {}, total_active_courses: 0,
   total_active_tasks: 0, total_submissions: 0, late_submissions: 0,
   pending_grades: 0, avg_score: null, daily_submissions_last_7d: [],
+})
+
+onBeforeUnmount(() => {
+  if (resizeHandler.value) window.removeEventListener('resize', resizeHandler.value)
 })
 
 function roleLabel(role) {
@@ -103,8 +113,7 @@ function renderChart(dailyData) {
     yAxis: { type: 'value', minInterval: 1 },
     series: [{ type: 'bar', data: dailyData.map(d => d.count), itemStyle: { color: '#409eff' } }],
   })
-  const onResize = () => chart.resize()
-  window.addEventListener('resize', onResize)
-  onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+  resizeHandler.value = () => chart.resize()
+  window.addEventListener('resize', resizeHandler.value)
 }
 </script>
