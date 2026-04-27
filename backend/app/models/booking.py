@@ -25,11 +25,19 @@ class Booking(Base):
     purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     start_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
     end_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
-    booked_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    booked_by: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
     status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
-    course_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-    class_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-    task_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    course_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    class_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("classes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    task_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     client_ref: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow_naive, nullable=False
@@ -37,19 +45,6 @@ class Booking(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False
     )
-
-    def __init__(self, *, client_reference: Optional[str] = None, **kwargs: object) -> None:
-        if "client_ref" not in kwargs and client_reference is not None:
-            kwargs["client_ref"] = client_reference
-        super().__init__(**kwargs)
-
-    @property
-    def client_reference(self) -> Optional[str]:
-        return self.client_ref
-
-    @client_reference.setter
-    def client_reference(self, value: Optional[str]) -> None:
-        self.client_ref = value
 
 
 class BookingEquipment(Base):
