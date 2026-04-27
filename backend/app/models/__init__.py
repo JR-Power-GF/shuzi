@@ -11,6 +11,10 @@ from app.models.ai_usage_log import AIUsageLog
 from app.models.ai_feedback import AIFeedback
 from app.models.prompt_template import PromptTemplate
 from app.models.training_summary import TrainingSummary
+from app.models.audit_log import AuditLog
+from app.models.venue import Venue
+from app.models.equipment import Equipment
+from app.models.booking import Booking, BookingEquipment
 
 __all__ = [
     "User",
@@ -26,4 +30,9 @@ __all__ = [
     "AIFeedback",
     "PromptTemplate",
     "TrainingSummary",
+    "AuditLog",
+    "Venue",
+    "Equipment",
+    "Booking",
+    "BookingEquipment",
 ]
