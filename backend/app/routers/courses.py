@@ -356,6 +356,111 @@ async def generate_training_summary(
     )
 
 
+@router.get("/{course_id}/summary", response_model=SummaryResponse)
+async def get_training_summary(
+    course_id: int,
+    current_user: dict = Depends(require_role(["student"])),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve a previously saved training summary for the current student."""
+    # Verify student has class and course access
+    user_result = await db.execute(
+        select(User.primary_class_id).where(User.id == current_user["id"])
+    )
+    class_id = user_result.scalar_one_or_none()
+    if class_id is None:
+        raise HTTPException(status_code=403, detail="未分配班级")
+
+    course_task_count = await db.execute(
+        select(func.count()).select_from(Task).where(
+            Task.course_id == course_id,
+            Task.class_id == class_id,
+        )
+    )
+    if course_task_count.scalar() == 0:
+        raise HTTPException(status_code=403, detail="无权访问该课程")
+
+    # Query the student's saved summary
+    summary_result = await db.execute(
+        select(TrainingSummary).where(
+            TrainingSummary.student_id == current_user["id"],
+            TrainingSummary.course_id == course_id,
+        )
+    )
+    summary = summary_result.scalar_one_or_none()
+    if summary is None:
+        raise HTTPException(status_code=404, detail="暂未保存总结")
+
+    return SummaryResponse(
+        id=summary.id,
+        course_id=summary.course_id,
+        content=summary.content,
+        status=summary.status,
+        created_at=summary.created_at,
+        updated_at=summary.updated_at,
+    )
+
+
+@router.put("/{course_id}/summary", response_model=SummaryResponse)
+async def save_training_summary(
+    course_id: int,
+    data: SummarySaveRequest,
+    current_user: dict = Depends(require_role(["student"])),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save or update a training summary. Student explicitly chooses draft or submitted."""
+    # Verify student has class and course access
+    user_result = await db.execute(
+        select(User.primary_class_id).where(User.id == current_user["id"])
+    )
+    class_id = user_result.scalar_one_or_none()
+    if class_id is None:
+        raise HTTPException(status_code=403, detail="未分配班级")
+
+    course_task_count = await db.execute(
+        select(func.count()).select_from(Task).where(
+            Task.course_id == course_id,
+            Task.class_id == class_id,
+        )
+    )
+    if course_task_count.scalar() == 0:
+        raise HTTPException(status_code=403, detail="无权访问该课程")
+
+    # Check for existing summary
+    summary_result = await db.execute(
+        select(TrainingSummary).where(
+            TrainingSummary.student_id == current_user["id"],
+            TrainingSummary.course_id == course_id,
+        )
+    )
+    summary = summary_result.scalar_one_or_none()
+
+    if summary:
+        # Update existing
+        summary.content = data.content
+        summary.status = data.status
+    else:
+        # Create new
+        summary = TrainingSummary(
+            student_id=current_user["id"],
+            course_id=course_id,
+            content=data.content,
+            status=data.status,
+        )
+        db.add(summary)
+
+    await db.flush()
+
+    return SummaryResponse(
+        id=summary.id,
+        course_id=summary.course_id,
+        content=summary.content,
+        status=summary.status,
+        created_at=summary.created_at,
+        updated_at=summary.updated_at,
+    )
+
+
 @router.get("/{course_id}", response_model=CourseDetailResponse)
 async def get_course_detail(
     course_id: int,
