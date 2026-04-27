@@ -5,12 +5,19 @@
     <el-row :gutter="16" style="margin-bottom: 24px">
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="我的课程" :value="data.my_active_courses" />
+          <el-statistic title="我的班级" :value="data.my_classes" />
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="我的任务" :value="data.my_active_tasks" />
+          <el-statistic title="课程（活跃/归档）" :value="data.my_active_courses" />
+          <div style="color: #909399; font-size: 12px; margin-top: 4px">归档：{{ data.my_archived_courses }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="hover">
+          <el-statistic title="任务（活跃/归档）" :value="data.my_active_tasks" />
+          <div style="color: #909399; font-size: 12px; margin-top: 4px">归档：{{ data.my_archived_tasks }}</div>
         </el-card>
       </el-col>
       <el-col :span="6">
@@ -18,6 +25,9 @@
           <el-statistic title="总提交数" :value="data.my_total_submissions" />
         </el-card>
       </el-col>
+    </el-row>
+
+    <el-row :gutter="16" style="margin-bottom: 24px">
       <el-col :span="6">
         <el-card shadow="hover">
           <el-statistic title="待评分" :value="data.my_pending_grades">
@@ -27,9 +37,11 @@
           </el-statistic>
         </el-card>
       </el-col>
-    </el-row>
-
-    <el-row :gutter="16" style="margin-bottom: 24px">
+      <el-col :span="6">
+        <el-card shadow="hover">
+          <el-statistic title="已评分" :value="data.my_graded" />
+        </el-card>
+      </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
           <el-statistic title="迟交数" :value="data.my_late_submissions" />
@@ -51,6 +63,16 @@
       </el-col>
     </el-row>
 
+    <el-row :gutter="16" style="margin-bottom: 24px">
+      <el-col :span="6">
+        <el-card shadow="hover">
+          <div style="margin-bottom: 4px; color: #909399; font-size: 13px">最近截止日期</div>
+          <div v-if="data.my_nearby_deadline" style="font-size: 14px; font-weight: 600">{{ data.my_nearby_deadline }}</div>
+          <div v-else style="font-size: 14px; color: #c0c4cc">暂无</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card shadow="hover">
       <template #header><span>近 7 天提交趋势</span></template>
       <div ref="chartRef" style="height: 300px" />
@@ -67,8 +89,10 @@ const loading = ref(false)
 const chartRef = ref(null)
 const resizeHandler = ref(null)
 const data = ref({
-  my_active_courses: 0, my_active_tasks: 0, my_total_submissions: 0,
-  my_late_submissions: 0, my_pending_grades: 0, my_avg_score: null,
+  my_classes: 0, my_active_courses: 0, my_archived_courses: 0,
+  my_active_tasks: 0, my_archived_tasks: 0, my_total_submissions: 0,
+  my_late_submissions: 0, my_pending_grades: 0, my_graded: 0,
+  my_avg_score: null, my_nearby_deadline: null,
   my_daily_submissions_last_7d: [],
 })
 

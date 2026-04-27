@@ -37,6 +37,9 @@
           <el-menu-item index="/admin/dashboard">
             <span>系统概览</span>
           </el-menu-item>
+          <el-menu-item index="/admin/stats/courses">
+            <span>课程统计</span>
+          </el-menu-item>
           <el-menu-item index="/admin/users">
             <span>用户管理</span>
           </el-menu-item>

@@ -10,17 +10,19 @@
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="活跃课程" :value="data.total_active_courses" />
+          <el-statistic title="班级数" :value="data.total_classes" />
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="活跃任务" :value="data.total_active_tasks" />
+          <el-statistic title="课程（活跃/归档）" :value="data.total_active_courses" />
+          <div style="color: #909399; font-size: 12px; margin-top: 4px">归档：{{ data.total_archived_courses }}</div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="总提交数" :value="data.total_submissions" />
+          <el-statistic title="任务（活跃/归档）" :value="data.total_active_tasks" />
+          <div style="color: #909399; font-size: 12px; margin-top: 4px">归档：{{ data.total_archived_tasks }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -28,14 +30,31 @@
     <el-row :gutter="16" style="margin-bottom: 24px">
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="迟交数" :value="data.late_submissions" />
+          <el-statistic title="总提交数" :value="data.total_submissions" />
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="待评分" :value="data.pending_grades" />
+          <el-statistic title="待评分" :value="data.pending_grades">
+            <template #suffix>
+              <el-tag v-if="data.pending_grades > 0" type="warning" size="small" style="margin-left: 8px">需处理</el-tag>
+            </template>
+          </el-statistic>
         </el-card>
       </el-col>
+      <el-col :span="6">
+        <el-card shadow="hover">
+          <el-statistic title="已评分" :value="data.graded" />
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="hover">
+          <el-statistic title="迟交数" :value="data.late_submissions" />
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="16" style="margin-bottom: 24px">
       <el-col :span="6">
         <el-card shadow="hover">
           <el-statistic
@@ -48,6 +67,13 @@
             <div style="margin-bottom: 4px; color: #909399; font-size: 13px">平均分</div>
             <div style="font-size: 20px; font-weight: 600">--</div>
           </div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="hover">
+          <div style="margin-bottom: 4px; color: #909399; font-size: 13px">最近截止日期</div>
+          <div v-if="data.nearby_deadline" style="font-size: 14px; font-weight: 600">{{ data.nearby_deadline }}</div>
+          <div v-else style="font-size: 14px; color: #c0c4cc">暂无</div>
         </el-card>
       </el-col>
       <el-col :span="6">
@@ -76,9 +102,12 @@ const loading = ref(false)
 const chartRef = ref(null)
 const resizeHandler = ref(null)
 const data = ref({
-  total_users: 0, users_by_role: {}, total_active_courses: 0,
-  total_active_tasks: 0, total_submissions: 0, late_submissions: 0,
-  pending_grades: 0, avg_score: null, daily_submissions_last_7d: [],
+  total_users: 0, users_by_role: {}, total_classes: 0,
+  total_active_courses: 0, total_archived_courses: 0,
+  total_active_tasks: 0, total_archived_tasks: 0,
+  total_submissions: 0, pending_grades: 0, graded: 0,
+  late_submissions: 0, avg_score: null, nearby_deadline: null,
+  daily_submissions_last_7d: [],
 })
 
 onBeforeUnmount(() => {

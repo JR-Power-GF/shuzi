@@ -216,9 +216,13 @@ async def test_openai_provider_creates_client():
 
 
 def test_get_ai_service_returns_mock_by_default():
-    from app.services.ai import get_ai_service
-    service = get_ai_service()
-    assert isinstance(service.provider, MockProvider)
+    import app.services.ai as ai_module
+    from unittest.mock import patch
+
+    ai_module._ai_service = None
+    with patch.object(ai_module.settings, "AI_API_KEY", ""):
+        service = ai_module.get_ai_service()
+        assert isinstance(service.provider, MockProvider)
 
 
 @pytest.mark.asyncio(loop_scope="session")
