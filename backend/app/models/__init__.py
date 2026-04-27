@@ -10,6 +10,7 @@ from app.models.ai_config import AIConfig
 from app.models.ai_usage_log import AIUsageLog
 from app.models.ai_feedback import AIFeedback
 from app.models.prompt_template import PromptTemplate
+from app.models.training_summary import TrainingSummary
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "AIUsageLog",
     "AIFeedback",
     "PromptTemplate",
+    "TrainingSummary",
 ]
