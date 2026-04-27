@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class EquipmentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     category: Optional[str] = Field(None, max_length=50)
-    serial_number: Optional[str] = Field(None, max_length=100)
+    serial_number: Optional[str] = Field(None, min_length=1, max_length=100)
     venue_id: Optional[int] = None
     description: Optional[str] = None
     external_id: Optional[str] = Field(None, max_length=100)
@@ -18,10 +18,10 @@ class EquipmentUpdate(BaseModel):
 
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     category: Optional[str] = Field(None, max_length=50)
-    serial_number: Optional[str] = Field(None, max_length=100)
+    serial_number: Optional[str] = Field(None, min_length=1, max_length=100)
     venue_id: Optional[int] = None
     description: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[str] = Field(None, pattern=r'^(active|inactive|maintenance)$')
     external_id: Optional[str] = Field(None, max_length=100)
 
 

@@ -19,7 +19,7 @@ class VenueUpdate(BaseModel):
     capacity: Optional[int] = None
     location: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[str] = Field(None, pattern=r'^(active|inactive|maintenance)$')
     external_id: Optional[str] = Field(None, max_length=100)
 
 

@@ -39,6 +39,10 @@ class BookingUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_range(self):
+        # Only validates when both fields are present. Partial updates
+        # (only start_time or only end_time) pass through intentionally —
+        # the route handler must load the existing booking and re-validate
+        # the combined time range before persisting.
         if self.start_time is not None and self.end_time is not None:
             if self.start_time >= self.end_time:
                 raise ValueError("start_time must be before end_time")
