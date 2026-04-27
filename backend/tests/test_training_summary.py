@@ -532,3 +532,68 @@ async def test_generate_summary_template_missing(
     )
     assert resp.status_code == 500, f"Expected 500, got {resp.status_code}: {resp.text}"
     assert "模板" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Save / Get summary tests (Task 6: explicit save only, no auto-submit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_save_and_get_summary(client, db_session, setup_summary_env):
+    """Student saves a draft, then retrieves it."""
+    env = setup_summary_env
+    token = await login_user(client, "student_summary")
+
+    save_resp = await client.put(
+        f"/api/courses/{env['course'].id}/summary",
+        json={"content": "我的实训总结内容", "status": "draft"},
+        headers=auth_headers(token),
+    )
+    assert save_resp.status_code == 200
+    assert save_resp.json()["content"] == "我的实训总结内容"
+    assert save_resp.json()["status"] == "draft"
+    summary_id = save_resp.json()["id"]
+
+    get_resp = await client.get(
+        f"/api/courses/{env['course'].id}/summary",
+        headers=auth_headers(token),
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == summary_id
+    assert get_resp.json()["content"] == "我的实训总结内容"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_summary(client, db_session, setup_summary_env):
+    """Student can update an existing summary (edit → save again)."""
+    env = setup_summary_env
+    token = await login_user(client, "student_summary")
+
+    await client.put(
+        f"/api/courses/{env['course'].id}/summary",
+        json={"content": "初稿", "status": "draft"},
+        headers=auth_headers(token),
+    )
+
+    update_resp = await client.put(
+        f"/api/courses/{env['course'].id}/summary",
+        json={"content": "修改后的总结", "status": "submitted"},
+        headers=auth_headers(token),
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["content"] == "修改后的总结"
+    assert update_resp.json()["status"] == "submitted"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_summary_not_found(client, db_session, setup_summary_env):
+    """GET summary returns 404 when no summary has been saved."""
+    env = setup_summary_env
+    token = await login_user(client, "student_summary")
+
+    resp = await client.get(
+        f"/api/courses/{env['course'].id}/summary",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404
