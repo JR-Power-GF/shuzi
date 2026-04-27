@@ -286,7 +286,7 @@ async def generate_training_summary(
         select(User.primary_class_id).where(User.id == current_user["id"])
     )
     class_id = user_result.scalar_one_or_none()
-    if not class_id:
+    if class_id is None:
         raise HTTPException(status_code=403, detail="未分配班级")
 
     task_count_result = await db.execute(
