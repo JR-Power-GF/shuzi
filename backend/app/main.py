@@ -15,6 +15,7 @@ from app.routers import grades as grades_router
 from app.routers import users as users_router
 from app.routers import ai as ai_router
 from app.routers import prompts as prompts_router
+from app.routers import dashboard as dashboard_router
 
 
 @asynccontextmanager
@@ -55,6 +56,7 @@ app.include_router(grades_router.router)
 app.include_router(users_router.router)
 app.include_router(ai_router.router)
 app.include_router(prompts_router.router)
+app.include_router(dashboard_router.router)
 
 
 @app.get("/health")
