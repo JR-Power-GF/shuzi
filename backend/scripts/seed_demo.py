@@ -112,8 +112,18 @@ async def seed():
             PromptTemplate(
                 name="training_summary",
                 description="生成实训总结",
-                template_text="请根据学生的提交记录生成一份实训总结。\n\n课程：{course_name}\n课程描述：{course_description}\n提交次数：{submission_count}\n提交内容摘要：\n{submission_summaries}\n\n请包含：学习概述、主要收获、不足与改进",
-                variables=json.dumps(["course_name", "course_description", "submission_count", "submission_summaries"]),
+                template_text=(
+                    "你是教学助教，请根据学生的提交记录生成一份实训总结初稿。\n\n"
+                    "## 学生提交记录\n"
+                    "{submissions_context}\n\n"
+                    "## 严格规则\n"
+                    "1. 只根据上方提供的提交记录生成总结，不要编造不存在的任务或成果\n"
+                    "2. 总结结构：学习概述、主要收获、不足与改进建议、下一步学习计划\n"
+                    "3. 如果提交记录很少，明确指出数据不足\n"
+                    "4. 用简洁清晰的中文撰写，长度 300-800 字\n"
+                    "5. 这是初稿，学生可能会修改，不要加标题或格式标记\n"
+                ),
+                variables=json.dumps(["submissions_context"]),
             ),
         ]
         for t in templates:
