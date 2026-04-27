@@ -40,7 +40,7 @@
         <el-card shadow="hover">
           <el-statistic
             title="平均分"
-            :value="data.avg_score ?? '-'"
+            :value="data.avg_score !== null ? data.avg_score : '-'"
             :precision="1"
           />
         </el-card>
@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../api'
 
@@ -103,6 +103,8 @@ function renderChart(dailyData) {
     yAxis: { type: 'value', minInterval: 1 },
     series: [{ type: 'bar', data: dailyData.map(d => d.count), itemStyle: { color: '#409eff' } }],
   })
-  window.addEventListener('resize', () => chart.resize())
+  const onResize = () => chart.resize()
+  window.addEventListener('resize', onResize)
+  onBeforeUnmount(() => window.removeEventListener('resize', onResize))
 }
 </script>
