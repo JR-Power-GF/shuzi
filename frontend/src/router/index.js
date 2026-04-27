@@ -107,6 +107,12 @@ const routes = [
         meta: { roles: ['student'] },
       },
       {
+        path: 'student/courses/:id/summary',
+        name: 'StudentCourseSummary',
+        component: () => import('../views/student/CourseSummary.vue'),
+        meta: { roles: ['student'] },
+      },
+      {
         path: 'admin/ai/config',
         name: 'AdminAIConfig',
         component: () => import('../views/admin/AIConfig.vue'),

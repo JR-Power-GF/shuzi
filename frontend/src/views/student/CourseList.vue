@@ -27,6 +27,11 @@
             已出分 {{ course.graded_count }}
           </el-tag>
         </div>
+        <div style="margin-top: 12px; text-align: right">
+          <router-link :to="`/student/courses/${course.id}/summary`">
+            <el-button size="small" type="primary" plain>实训总结</el-button>
+          </router-link>
+        </div>
       </el-card>
     </div>
   </div>
