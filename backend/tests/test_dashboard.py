@@ -140,14 +140,21 @@ async def test_admin_dashboard_metrics(client, setup_dashboard_env):
     assert "daily_submissions_last_7d" in data
 
     # Verify types
-    assert isinstance(data["total_users"], int)
     assert isinstance(data["users_by_role"], dict)
-    assert isinstance(data["total_active_courses"], int)
-    assert isinstance(data["total_active_tasks"], int)
-    assert isinstance(data["total_submissions"], int)
-    assert isinstance(data["late_submissions"], int)
-    assert isinstance(data["pending_grades"], int)
     assert isinstance(data["daily_submissions_last_7d"], list)
+
+    # Verify values match fixture data: 5 users, 1 course, 2 tasks, 3 submissions, 1 late, 1 ungraded
+    assert data["total_users"] >= 5
+    assert "admin" in data["users_by_role"]
+    assert "teacher" in data["users_by_role"]
+    assert "student" in data["users_by_role"]
+    assert data["total_active_courses"] >= 1
+    assert data["total_active_tasks"] >= 2
+    assert data["total_submissions"] >= 3
+    assert data["late_submissions"] >= 1
+    assert data["pending_grades"] >= 1
+    assert data["avg_score"] is not None
+    assert abs(data["avg_score"] - 87.5) < 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -174,12 +181,16 @@ async def test_teacher_dashboard_metrics(client, setup_dashboard_env):
     assert "my_daily_submissions_last_7d" in data
 
     # Verify types
-    assert isinstance(data["my_active_courses"], int)
-    assert isinstance(data["my_active_tasks"], int)
-    assert isinstance(data["my_total_submissions"], int)
-    assert isinstance(data["my_late_submissions"], int)
-    assert isinstance(data["my_pending_grades"], int)
     assert isinstance(data["my_daily_submissions_last_7d"], list)
+
+    # Verify values match fixture: teacher owns 1 course, 2 tasks, 3 submissions, 1 late, 1 ungraded
+    assert data["my_active_courses"] >= 1
+    assert data["my_active_tasks"] >= 2
+    assert data["my_total_submissions"] >= 3
+    assert data["my_late_submissions"] >= 1
+    assert data["my_pending_grades"] >= 1
+    assert data["my_avg_score"] is not None
+    assert abs(data["my_avg_score"] - 87.5) < 0.1
 
 
 # ---------------------------------------------------------------------------
