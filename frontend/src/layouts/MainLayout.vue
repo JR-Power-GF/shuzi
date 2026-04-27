@@ -12,6 +12,9 @@
         router
       >
         <template v-if="auth.userRole === 'teacher'">
+          <el-menu-item index="/teacher/dashboard">
+            <span>教学概览</span>
+          </el-menu-item>
           <el-menu-item index="/teacher/courses">
             <span>课程管理</span>
           </el-menu-item>
@@ -31,6 +34,9 @@
           </el-menu-item>
         </template>
         <template v-if="auth.userRole === 'admin'">
+          <el-menu-item index="/admin/dashboard">
+            <span>系统概览</span>
+          </el-menu-item>
           <el-menu-item index="/admin/users">
             <span>用户管理</span>
           </el-menu-item>

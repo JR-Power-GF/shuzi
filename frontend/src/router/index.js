@@ -17,6 +17,12 @@ const routes = [
         redirect: '/login',
       },
       {
+        path: 'teacher/dashboard',
+        name: 'TeacherDashboard',
+        component: () => import('../views/teacher/Dashboard.vue'),
+        meta: { roles: ['teacher'] },
+      },
+      {
         path: 'teacher/tasks',
         name: 'TeacherTaskList',
         component: () => import('../views/teacher/TaskList.vue'),
@@ -51,6 +57,12 @@ const routes = [
         name: 'StudentSubmissionDetail',
         component: () => import('../views/student/SubmissionDetail.vue'),
         meta: { roles: ['student'] },
+      },
+      {
+        path: 'admin/dashboard',
+        name: 'AdminDashboard',
+        component: () => import('../views/admin/Dashboard.vue'),
+        meta: { roles: ['admin'] },
       },
       {
         path: 'admin/users',
