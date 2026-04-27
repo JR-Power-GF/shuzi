@@ -1,4 +1,5 @@
 import json
+import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,4 +28,5 @@ class PromptService:
         missing = required_vars - provided_vars
         if missing:
             raise ValueError(f"Missing template variables: {', '.join(sorted(missing))}")
-        return template["template_text"].format(**context)
+        safe_context = {k: str(v).replace("{", "{{").replace("}", "}}") for k, v in context.items()}
+        return template["template_text"].format(**safe_context)

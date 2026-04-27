@@ -1,4 +1,5 @@
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -7,6 +8,7 @@ from app.models.class_ import Class
 from app.models.course import Course
 from app.models.prompt_template import PromptTemplate
 from app.models.task import Task
+from app.services.ai import AIServiceError, BudgetExceededError
 from tests.helpers import create_test_user, login_user, auth_headers
 
 
@@ -139,3 +141,53 @@ async def test_qa_template_missing(client, db_session):
     )
     assert resp.status_code == 500
     assert resp.json()["detail"] == "问答模板未配置"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_budget_exceeded(client, db_session, setup_qa_env):
+    env = setup_qa_env
+    token = await login_user(client, "student_qa")
+    mock_service = AsyncMock()
+    mock_service.generate.side_effect = BudgetExceededError("额度用完")
+
+    with patch("app.routers.tasks.get_ai_service", return_value=mock_service):
+        resp = await client.post(
+            f"/api/tasks/{env['task'].id}/qa",
+            json={"question": "测试问题"},
+            headers=auth_headers(token),
+        )
+    assert resp.status_code == 429
+    assert "额度" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_ai_service_error(client, db_session, setup_qa_env):
+    env = setup_qa_env
+    token = await login_user(client, "student_qa")
+    mock_service = AsyncMock()
+    mock_service.generate.side_effect = AIServiceError("服务不可用")
+
+    with patch("app.routers.tasks.get_ai_service", return_value=mock_service):
+        resp = await client.post(
+            f"/api/tasks/{env['task'].id}/qa",
+            json={"question": "测试问题"},
+            headers=auth_headers(token),
+        )
+    assert resp.status_code == 502
+    assert "不可用" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_qa_archived_task(client, db_session, setup_qa_env):
+    env = setup_qa_env
+    env["task"].status = "archived"
+    await db_session.flush()
+
+    token = await login_user(client, "student_qa")
+    resp = await client.post(
+        f"/api/tasks/{env['task'].id}/qa",
+        json={"question": "测试问题"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 400
+    assert "归档" in resp.json()["detail"]

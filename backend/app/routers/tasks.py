@@ -92,6 +92,9 @@ async def ask_task_question(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
+    if task.status != "active":
+        raise HTTPException(status_code=400, detail="任务已归档，无法提问")
+
     user_result = await db.execute(
         select(User.primary_class_id).where(User.id == current_user["id"])
     )

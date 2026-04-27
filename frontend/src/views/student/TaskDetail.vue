@@ -194,8 +194,12 @@ async function submitQAFeedback(messageIndex, rating) {
     await api.post('/ai/feedback', { ai_usage_log_id: msg.usageLogId, rating })
     msg.feedback = rating
     ElMessage.success('感谢您的反馈')
-  } catch {
-    ElMessage.error('反馈提交失败')
+  } catch (err) {
+    if (err.response?.status === 409) {
+      ElMessage.info('已经评价过')
+    } else {
+      ElMessage.error('反馈提交失败')
+    }
   }
 }
 </script>
