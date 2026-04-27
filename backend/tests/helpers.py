@@ -5,8 +5,10 @@ import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.class_ import Class
+from app.models.equipment import Equipment
 from app.models.task import Task
 from app.models.user import User
+from app.models.venue import Venue
 
 
 def hash_password(password: str) -> str:
@@ -85,3 +87,37 @@ async def login_user(client, username: str, password: str = "testpass123") -> st
 
 def auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+async def create_test_venue(
+    db: AsyncSession,
+    *,
+    name: str = "Test Venue",
+    capacity: int = None,
+    location: str = None,
+    status: str = "active",
+    **kwargs,
+) -> Venue:
+    venue = Venue(name=name, capacity=capacity, location=location, status=status, **kwargs)
+    db.add(venue)
+    await db.flush()
+    return venue
+
+
+async def create_test_equipment(
+    db: AsyncSession,
+    *,
+    name: str = "Test Equipment",
+    category: str = None,
+    serial_number: str = None,
+    venue_id: int = None,
+    status: str = "active",
+    **kwargs,
+) -> Equipment:
+    equip = Equipment(
+        name=name, category=category, serial_number=serial_number,
+        venue_id=venue_id, status=status, **kwargs,
+    )
+    db.add(equip)
+    await db.flush()
+    return equip
