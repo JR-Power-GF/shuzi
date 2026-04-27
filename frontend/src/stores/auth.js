@@ -32,8 +32,8 @@ export const useAuthStore = defineStore('auth', () => {
   function getHomeRoute() {
     if (!user.value) return '/login'
     switch (user.value.role) {
-      case 'admin': return '/admin/users'
-      case 'teacher': return '/teacher/tasks'
+      case 'admin': return '/admin/dashboard'
+      case 'teacher': return '/teacher/dashboard'
       case 'student': return '/student/courses'
       default: return '/login'
     }
