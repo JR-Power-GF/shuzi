@@ -32,9 +32,6 @@ async def grade_submission(
     if task.grades_published:
         raise HTTPException(status_code=400, detail="请先撤回已发布的成绩")
 
-    if data.score < 0 or data.score > 100:
-        raise HTTPException(status_code=422, detail="分数必须在 0-100 之间")
-
     sub_result = await db.execute(select(Submission).where(Submission.id == data.submission_id))
     submission = sub_result.scalar_one_or_none()
     if not submission:

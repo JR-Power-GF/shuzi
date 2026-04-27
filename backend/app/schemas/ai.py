@@ -48,10 +48,16 @@ class AIStatsOut(BaseModel):
     avg_latency_ms: float
 
 
+class AIFeedbackNegativeItem(BaseModel):
+    id: int
+    comment: Optional[str] = None
+    created_at: str
+
+
 class AIFeedbackSummary(BaseModel):
     positive_count: int
     negative_count: int
-    recent_negative: List[dict]
+    recent_negative: List[AIFeedbackNegativeItem]
 
 
 class AIConfigOut(BaseModel):

@@ -96,7 +96,9 @@ async def query_usage(
 
     target_user_id = user_id if user_id is not None else current_user["id"]
     user_result = await db.execute(select(User.role).where(User.id == target_user_id))
-    role = user_result.scalar_one_or_none() or "student"
+    role = user_result.scalar_one_or_none()
+    if role is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
 
     config_result = await db.execute(select(AIConfig))
     configs = {c.key: c.value for c in config_result.scalars().all()}
@@ -241,10 +243,12 @@ async def update_config(
         result = await db.execute(select(AIConfig).where(AIConfig.key == key))
         config = result.scalar_one_or_none()
         if config:
-            config.value = str(value)
+            if value is not None:
+                config.value = str(value)
             config.updated_by = current_user["id"]
         else:
-            db.add(AIConfig(key=key, value=str(value), updated_by=current_user["id"]))
+            if value is not None:
+                db.add(AIConfig(key=key, value=str(value), updated_by=current_user["id"]))
     await db.flush()
 
     return await read_config(current_user=current_user, db=db)

@@ -483,17 +483,18 @@ async def get_course_detail(
     teacher_name = teacher_name_result.scalar_one()
 
     task_result = await db.execute(
-        select(Task).where(Task.course_id == course_id).order_by(Task.deadline)
+        select(Task, Class.name)
+        .outerjoin(Class, Task.class_id == Class.id)
+        .where(Task.course_id == course_id)
+        .order_by(Task.deadline)
     )
-    tasks = task_result.scalars().all()
+    task_rows = task_result.all()
     task_list = []
-    for t in tasks:
-        cls_result = await db.execute(select(Class.name).where(Class.id == t.class_id))
-        class_name = cls_result.scalar_one_or_none() or ""
+    for t, class_name in task_rows:
         task_list.append({
             "id": t.id,
             "title": t.title,
-            "class_name": class_name,
+            "class_name": class_name or "",
             "deadline": t.deadline.isoformat() if t.deadline else None,
             "status": t.status,
         })

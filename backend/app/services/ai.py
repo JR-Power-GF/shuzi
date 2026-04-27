@@ -1,7 +1,10 @@
 import datetime
+import logging
 import time
 from dataclasses import dataclass
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,8 +156,8 @@ class AIService:
                     prompt_tokens=0, completion_tokens=0, cost_microdollars=0,
                     latency_ms=latency_ms, status="error",
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error('Failed to log AI usage error: %s', exc)
             raise AIServiceError("AI 服务暂时不可用") from e
 
 

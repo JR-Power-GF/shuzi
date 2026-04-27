@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class GradeCreate(BaseModel):
     submission_id: int
-    score: float
+    score: float = Field(..., ge=0, le=100)
     feedback: Optional[str] = None
 
 

@@ -11,6 +11,8 @@ class CourseCreate(BaseModel):
 
 
 class CourseUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     name: Optional[str] = None
     description: Optional[str] = None
     semester: Optional[str] = None
@@ -29,8 +31,16 @@ class CourseResponse(BaseModel):
     updated_at: datetime
 
 
+class CourseTaskItem(BaseModel):
+    id: int
+    title: str
+    class_name: Optional[str] = None
+    deadline: Optional[str] = None
+    status: Optional[str] = None
+
+
 class CourseDetailResponse(CourseResponse):
-    tasks: List[dict] = []
+    tasks: List[CourseTaskItem] = []
 
 
 class CourseProgressResponse(BaseModel):
