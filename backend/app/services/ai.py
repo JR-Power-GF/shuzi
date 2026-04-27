@@ -147,11 +147,14 @@ class AIService:
             raise
         except Exception as e:
             latency_ms = int((time.time() - start) * 1000)
-            await self._log_usage(
-                db, user_id=user_id, endpoint=endpoint, model=model,
-                prompt_tokens=0, completion_tokens=0, cost_microdollars=0,
-                latency_ms=latency_ms, status="error",
-            )
+            try:
+                await self._log_usage(
+                    db, user_id=user_id, endpoint=endpoint, model=model,
+                    prompt_tokens=0, completion_tokens=0, cost_microdollars=0,
+                    latency_ms=latency_ms, status="error",
+                )
+            except Exception:
+                pass
             raise AIServiceError("AI 服务暂时不可用") from e
 
 
@@ -159,9 +162,10 @@ class OpenAIProvider:
     """Real OpenAI API provider using AsyncOpenAI."""
 
     def __init__(self, api_key: str, base_url: str = ""):
+        import httpx
         from openai import AsyncOpenAI
 
-        kwargs = {"api_key": api_key}
+        kwargs = {"api_key": api_key, "timeout": httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)}
         if base_url:
             kwargs["base_url"] = base_url
         self.client = AsyncOpenAI(**kwargs)
@@ -181,7 +185,14 @@ class OpenAIProvider:
         )
 
 
+_ai_service: AIService | None = None
+
+
 def get_ai_service() -> AIService:
-    if settings.AI_API_KEY:
-        return AIService(provider=OpenAIProvider(api_key=settings.AI_API_KEY, base_url=settings.AI_BASE_URL))
-    return AIService(provider=MockProvider())
+    global _ai_service
+    if _ai_service is None:
+        if settings.AI_API_KEY:
+            _ai_service = AIService(provider=OpenAIProvider(api_key=settings.AI_API_KEY, base_url=settings.AI_BASE_URL))
+        else:
+            _ai_service = AIService(provider=MockProvider())
+    return _ai_service

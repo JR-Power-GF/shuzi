@@ -158,6 +158,7 @@ async function handleSubmit() {
 }
 
 async function askQuestion() {
+  if (qaLoading.value) return
   const question = qaQuestion.value.trim()
   if (!question) return
 

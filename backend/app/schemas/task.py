@@ -1,6 +1,5 @@
-import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,7 +11,7 @@ class TaskCreate(BaseModel):
     class_id: int
     course_id: Optional[int] = None
     deadline: datetime
-    allowed_file_types: List[str]
+    allowed_file_types: list[str]
     max_file_size_mb: int = 50
     allow_late_submission: bool = False
     late_penalty_percent: Optional[float] = None
@@ -24,7 +23,7 @@ class TaskUpdate(BaseModel):
     requirements: Optional[str] = None
     course_id: Optional[int] = None
     deadline: Optional[datetime] = None
-    allowed_file_types: Optional[List[str]] = None
+    allowed_file_types: Optional[list[str]] = None
     max_file_size_mb: Optional[int] = None
     allow_late_submission: Optional[bool] = None
     late_penalty_percent: Optional[float] = None
@@ -40,7 +39,7 @@ class TaskResponse(BaseModel):
     course_id: Optional[int] = None
     created_by: int
     deadline: datetime
-    allowed_file_types: List[str]
+    allowed_file_types: list[str]
     max_file_size_mb: int
     allow_late_submission: bool
     late_penalty_percent: Optional[float] = None

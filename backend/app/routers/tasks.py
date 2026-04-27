@@ -96,7 +96,7 @@ async def ask_task_question(
         select(User.primary_class_id).where(User.id == current_user["id"])
     )
     class_id = user_result.scalar_one_or_none()
-    if not class_id or class_id != task.class_id:
+    if class_id is None or class_id != task.class_id:
         raise HTTPException(status_code=403, detail="无权访问该任务")
 
     course_name = ""
@@ -190,7 +190,7 @@ async def get_my_tasks(
             select(User.primary_class_id).where(User.id == current_user["id"])
         )
         class_id = user_result.scalar_one_or_none()
-        if not class_id:
+        if class_id is None:
             return []
         result = await db.execute(
             select(Task)
@@ -252,7 +252,7 @@ async def get_task_detail(
 async def update_task(
     task_id: int,
     data: TaskUpdate,
-    current_user=Depends(require_role(["teacher", "admin"])),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -303,7 +303,7 @@ async def update_task(
 @router.delete("/{task_id}")
 async def delete_task(
     task_id: int,
-    current_user=Depends(require_role(["teacher", "admin"])),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -327,7 +327,7 @@ async def delete_task(
 @router.post("/{task_id}/archive")
 async def archive_task(
     task_id: int,
-    current_user=Depends(require_role(["teacher", "admin"])),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -347,7 +347,7 @@ async def list_tasks_admin(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     course_id: Optional[int] = Query(None),
-    current_user=Depends(require_role("admin")),
+    current_user: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Task)
