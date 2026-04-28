@@ -17,6 +17,7 @@ from app.routers import ai as ai_router
 from app.routers import prompts as prompts_router
 from app.routers import dashboard as dashboard_router
 from app.routers import venues as venues_router
+from app.routers import equipment as equipment_router
 
 
 @asynccontextmanager
@@ -59,6 +60,7 @@ app.include_router(ai_router.router)
 app.include_router(prompts_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(venues_router.router)
+app.include_router(equipment_router.router)
 
 
 @app.get("/health")

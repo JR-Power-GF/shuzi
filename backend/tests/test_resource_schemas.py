@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.venue import VenueCreate, VenueUpdate, VenueResponse, VenueListResponse
-from app.schemas.equipment import EquipmentCreate, EquipmentUpdate, EquipmentResponse
+from app.schemas.equipment import EquipmentCreate, EquipmentUpdate, EquipmentResponse, EquipmentStatusUpdate
 from app.schemas.booking import BookingCreate, BookingUpdate, BookingResponse
 
 
@@ -158,6 +158,31 @@ def test_equipment_response_fields():
     )
     assert data.id == 1
     assert data.status == "active"
+
+
+def test_equipment_create_rejects_extra_fields():
+    with pytest.raises(ValidationError):
+        EquipmentCreate(name="Dev", bogus="bad")
+
+
+def test_equipment_status_update_valid():
+    data = EquipmentStatusUpdate(status="maintenance")
+    assert data.status == "maintenance"
+
+
+def test_equipment_status_update_rejects_invalid():
+    with pytest.raises(ValidationError):
+        EquipmentStatusUpdate(status="broken")
+
+
+def test_equipment_status_update_rejects_extra():
+    with pytest.raises(ValidationError):
+        EquipmentStatusUpdate(status="active", extra="bad")
+
+
+def test_equipment_status_update_missing_status():
+    with pytest.raises(ValidationError):
+        EquipmentStatusUpdate()
 
 
 # ---------------------------------------------------------------------------

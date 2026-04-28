@@ -1,10 +1,12 @@
-from datetime import datetime
+import datetime as _dt
 from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
 
 class EquipmentCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     name: str = Field(..., min_length=1, max_length=100)
     category: Optional[str] = Field(None, max_length=50)
     serial_number: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -25,6 +27,12 @@ class EquipmentUpdate(BaseModel):
     external_id: Optional[str] = Field(None, max_length=100)
 
 
+class EquipmentStatusUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    status: str = Field(..., pattern=r'^(active|inactive|maintenance)$')
+
+
 class EquipmentResponse(BaseModel):
     id: int
     name: str
@@ -35,8 +43,8 @@ class EquipmentResponse(BaseModel):
     venue_name: Optional[str] = None
     description: Optional[str] = None
     external_id: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: _dt.datetime
+    updated_at: _dt.datetime
 
 
 class EquipmentListResponse(BaseModel):
