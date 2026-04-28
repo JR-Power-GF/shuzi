@@ -1,6 +1,6 @@
 import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,15 +78,17 @@ async def _enrich_booking(db: AsyncSession, booking) -> dict:
     return _booking_to_response(booking, venue_name, equip_items)
 
 
-@router.post("", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=BookingResponse)
 async def create_booking(
     data: BookingCreate,
+    response: Response,
     current_user: dict = Depends(require_role(["admin", "facility_manager", "teacher"])),
     db: AsyncSession = Depends(get_db),
 ):
     booked_by = current_user["id"]
     svc = BookingService(db)
-    booking = await svc.create(data, actor_id=booked_by)
+    booking, is_idempotent = await svc.create(data, actor_id=booked_by)
+    response.status_code = status.HTTP_200_OK if is_idempotent else status.HTTP_201_CREATED
     return await _enrich_booking(db, booking)
 
 

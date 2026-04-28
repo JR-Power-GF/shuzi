@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy import select, func, delete, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import _utcnow_naive
@@ -44,12 +45,22 @@ class BookingService:
             raise HTTPException(status_code=400, detail="场地不可用")
         return venue
 
-    async def _validate_equipment(self, equipment_id: int) -> Equipment:
+    async def _validate_equipment(
+        self, equipment_id: int, venue_id: int | None = None
+    ) -> Equipment:
         equip = await acquire_row_lock(self.db, Equipment, equipment_id)
         if equip is None:
             raise HTTPException(status_code=400, detail=f"设备 {equipment_id} 不存在")
         if equip.status != "active":
             raise HTTPException(status_code=400, detail=f"设备 {equip.name} 不可用")
+        if (
+            venue_id is not None
+            and equip.venue_id is not None
+            and equip.venue_id != venue_id
+        ):
+            raise HTTPException(
+                status_code=400, detail=f"设备 {equip.name} 不属于该场地"
+            )
         return equip
 
     async def _check_conflicts(
@@ -100,21 +111,26 @@ class BookingService:
     # Public methods
     # ------------------------------------------------------------------
 
-    async def create(self, data: BookingCreate, actor_id: int) -> Booking:
-        # Idempotency via client_ref
+    async def create(
+        self, data: BookingCreate, actor_id: int
+    ) -> tuple[Booking, bool]:
+        # Idempotency via client_ref (scoped to actor)
         if data.client_ref is not None:
-            stmt = select(Booking).where(Booking.client_ref == data.client_ref)
+            stmt = select(Booking).where(
+                Booking.client_ref == data.client_ref,
+                Booking.booked_by == actor_id,
+            )
             result = await self.db.execute(stmt)
             existing = result.scalar_one_or_none()
             if existing is not None:
-                return existing
+                return existing, True
 
         # Validate resources (with row locks, ordered to prevent deadlock)
         await self._validate_venue(data.venue_id)
 
         equipment_ids = sorted(set(data.equipment_ids))
         for eid in equipment_ids:
-            await self._validate_equipment(eid)
+            await self._validate_equipment(eid, venue_id=data.venue_id)
 
         # Conflict detection (all-or-nothing)
         await self._check_conflicts(
@@ -124,27 +140,31 @@ class BookingService:
             end=data.end_time,
         )
 
-        # Create booking
-        booking = Booking(
-            venue_id=data.venue_id,
-            title=data.title,
-            purpose=data.purpose,
-            start_time=data.start_time,
-            end_time=data.end_time,
-            booked_by=actor_id,
-            status="approved",
-            course_id=data.course_id,
-            class_id=data.class_id,
-            task_id=data.task_id,
-            client_ref=data.client_ref,
-        )
-        self.db.add(booking)
-        await self.db.flush()
+        try:
+            # Create booking
+            booking = Booking(
+                venue_id=data.venue_id,
+                title=data.title,
+                purpose=data.purpose,
+                start_time=data.start_time,
+                end_time=data.end_time,
+                booked_by=actor_id,
+                status="approved",
+                course_id=data.course_id,
+                class_id=data.class_id,
+                task_id=data.task_id,
+                client_ref=data.client_ref,
+            )
+            self.db.add(booking)
+            await self.db.flush()
 
-        # Create equipment link rows
-        for eid in equipment_ids:
-            self.db.add(BookingEquipment(booking_id=booking.id, equipment_id=eid))
-        await self.db.flush()
+            # Create equipment link rows
+            for eid in equipment_ids:
+                self.db.add(BookingEquipment(booking_id=booking.id, equipment_id=eid))
+            await self.db.flush()
+        except IntegrityError:
+            await self.db.rollback()
+            raise HTTPException(status_code=409, detail="预约创建冲突，请重试")
 
         # Audit log
         await audit_log(
@@ -156,7 +176,7 @@ class BookingService:
             changes={"title": data.title, "venue_id": data.venue_id},
         )
 
-        return booking
+        return booking, False
 
     async def update(
         self, booking_id: int, data: BookingUpdate, actor_id: int
@@ -166,6 +186,9 @@ class BookingService:
         if booking.status == "cancelled":
             raise HTTPException(status_code=400, detail="已取消的预约无法修改")
 
+        if booking.end_time <= _utcnow_naive():
+            raise HTTPException(status_code=400, detail="已结束的预约无法修改")
+
         update_data = data.model_dump(exclude_unset=True)
         if not update_data:
             return booking
@@ -173,6 +196,9 @@ class BookingService:
         # Resolve effective time range
         eff_start = update_data.get("start_time", booking.start_time)
         eff_end = update_data.get("end_time", booking.end_time)
+
+        if eff_start >= eff_end:
+            raise HTTPException(status_code=400, detail="开始时间必须早于结束时间")
 
         # Resolve effective equipment list
         if "equipment_ids" in update_data:
@@ -192,7 +218,7 @@ class BookingService:
         if time_changed or equip_changed:
             await self._validate_venue(booking.venue_id)
             for eid in eff_equip_ids:
-                await self._validate_equipment(eid)
+                await self._validate_equipment(eid, venue_id=booking.venue_id)
             await self._check_conflicts(
                 venue_id=booking.venue_id,
                 equipment_ids=eff_equip_ids,

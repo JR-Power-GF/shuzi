@@ -841,7 +841,7 @@ async def test_client_ref_idempotent(client, db_session):
     assert resp1.status_code == 201
     bid1 = resp1.json()["id"]
     resp2 = await _make_booking(client, token, venue.id, title="Second", client_ref=ref)
-    assert resp2.status_code == 201
+    assert resp2.status_code == 200
     assert resp2.json()["id"] == bid1
 
 
