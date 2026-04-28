@@ -20,6 +20,7 @@ from app.routers import venues as venues_router
 from app.routers import equipment as equipment_router
 from app.routers import bookings as bookings_router
 from app.routers import stats as stats_router
+from app.routers import xr as xr_router
 
 
 @asynccontextmanager
@@ -65,6 +66,7 @@ app.include_router(venues_router.router)
 app.include_router(equipment_router.router)
 app.include_router(bookings_router.router)
 app.include_router(stats_router.router)
+app.include_router(xr_router.router)
 
 
 @app.get("/health")

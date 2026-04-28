@@ -17,6 +17,8 @@ from app.models.venue_availability import VenueAvailability
 from app.models.venue_blackout import VenueBlackout
 from app.models.equipment import Equipment
 from app.models.booking import Booking, BookingEquipment
+from app.models.xr_session import XRSession
+from app.models.xr_event import XREvent
 
 __all__ = [
     "User",
@@ -39,4 +41,6 @@ __all__ = [
     "Equipment",
     "Booking",
     "BookingEquipment",
+    "XRSession",
+    "XREvent",
 ]
