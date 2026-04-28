@@ -8,15 +8,16 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import _utcnow_naive
 from app.models.booking import Booking, BookingEquipment
 from app.models.equipment import Equipment
 from app.models.venue import Venue
 from app.schemas.booking import BookingCreate, BookingUpdate
 from app.services.audit import audit_log
-from app.services.booking_utils import check_time_overlap, acquire_row_lock
+from app.services.booking_utils import acquire_row_lock
 
 
 class BookingService:
@@ -64,29 +65,27 @@ class BookingService:
 
         All checks run *before* any writes so the operation is all-or-nothing.
         """
-        # --- venue overlap ---
-        venue_overlap = await check_time_overlap(
-            self.db,
-            table=Booking,
-            resource_id_column=Booking.venue_id,
-            resource_id=venue_id,
-            start_column=Booking.start_time,
-            end_column=Booking.end_time,
-            new_start=start,
-            new_end=end,
-            exclude_id=exclude_booking_id,
-            exclude_id_column=Booking.id,
+        # --- venue overlap (only approved bookings) ---
+        venue_stmt = select(Booking.id).where(
+            Booking.venue_id == venue_id,
+            Booking.status == "approved",
+            Booking.start_time < end,
+            Booking.end_time > start,
         )
-        if venue_overlap:
+        if exclude_booking_id is not None:
+            venue_stmt = venue_stmt.where(Booking.id != exclude_booking_id)
+        venue_result = await self.db.execute(venue_stmt)
+        if venue_result.scalar_one_or_none() is not None:
             raise HTTPException(status_code=409, detail="场地时间冲突")
 
-        # --- equipment overlaps (inline JOIN query) ---
+        # --- equipment overlaps (inline JOIN, only approved bookings) ---
         for eid in equipment_ids:
             stmt = (
                 select(Booking.id)
                 .join(BookingEquipment, BookingEquipment.booking_id == Booking.id)
                 .where(
                     BookingEquipment.equipment_id == eid,
+                    Booking.status == "approved",
                     Booking.start_time < end,
                     Booking.end_time > start,
                 )
@@ -239,7 +238,7 @@ class BookingService:
         if booking.status == "cancelled":
             return booking
 
-        if booking.end_time <= datetime.utcnow():
+        if booking.end_time <= _utcnow_naive():
             raise HTTPException(status_code=400, detail="已结束的预约无法取消")
 
         old_status = booking.status

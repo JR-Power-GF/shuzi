@@ -238,7 +238,6 @@ async def test_create_with_all_optional_fields(client, db_session):
     resp = await _make_booking(
         client, token, venue.id,
         title="Full BK", purpose="training",
-        course_id=1, class_id=1, task_id=1,
         client_ref="xr-session-001",
     )
     assert resp.status_code == 201
