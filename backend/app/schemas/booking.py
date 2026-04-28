@@ -10,6 +10,8 @@ class EquipmentItem(BaseModel):
 
 
 class BookingCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     venue_id: int
     title: str = Field(..., min_length=1, max_length=200)
     purpose: Optional[str] = None
