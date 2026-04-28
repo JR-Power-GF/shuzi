@@ -1,5 +1,4 @@
 import datetime
-from decimal import Decimal
 
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
