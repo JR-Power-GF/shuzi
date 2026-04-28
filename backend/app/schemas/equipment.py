@@ -23,7 +23,6 @@ class EquipmentUpdate(BaseModel):
     serial_number: Optional[str] = Field(None, min_length=1, max_length=100)
     venue_id: Optional[int] = None
     description: Optional[str] = None
-    status: Optional[str] = Field(None, pattern=r'^(active|inactive|maintenance)$')
     external_id: Optional[str] = Field(None, max_length=100)
 
 

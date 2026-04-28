@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -69,7 +70,12 @@ async def create_equipment(
         external_id=data.external_id,
     )
     db.add(equip)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        if data.serial_number and "serial_number" in str(exc.orig):
+            raise HTTPException(status_code=409, detail="序列号已存在")
+        raise
 
     await audit_log(
         db, entity_type="equipment", entity_id=equip.id,
@@ -163,7 +169,12 @@ async def update_equipment(
 
     for field, value in update_data.items():
         setattr(equip, field, value)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        if "serial_number" in str(exc.orig):
+            raise HTTPException(status_code=409, detail="序列号已存在")
+        raise
 
     await audit_log(
         db, entity_type="equipment", entity_id=equip.id,
@@ -198,7 +209,7 @@ async def change_equipment_status(
     return _equip_to_response(equip, venue_name)
 
 
-@router.delete("/{equipment_id}/venue", response_model=EquipmentResponse)
+@router.post("/{equipment_id}/unassign-venue", response_model=EquipmentResponse)
 async def unassign_equipment_venue(
     equipment_id: int,
     current_user: dict = Depends(require_role(["admin", "facility_manager"])),

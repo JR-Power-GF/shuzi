@@ -134,15 +134,9 @@ def test_equipment_update_rejects_empty_serial_number():
         EquipmentUpdate(serial_number="")
 
 
-def test_equipment_update_rejects_invalid_status():
+def test_equipment_update_rejects_status_field():
     with pytest.raises(ValidationError):
-        EquipmentUpdate(status="broken")
-
-
-def test_equipment_update_accepts_valid_statuses():
-    for s in ("active", "inactive", "maintenance"):
-        data = EquipmentUpdate(status=s)
-        assert data.status == s
+        EquipmentUpdate(status="active")
 
 
 def test_equipment_update_forbids_extra_fields():

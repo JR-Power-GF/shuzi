@@ -410,8 +410,8 @@ async def test_unassign_venue(client, db_session):
     admin_tok = await _admin_token(client, db_session, "eq_unassign")
     venue = await create_test_venue(db_session, name="Lab 404")
     equip = await create_test_equipment(db_session, name="Unassign E", venue_id=venue.id)
-    resp = await client.delete(
-        f"/api/v1/equipment/{equip.id}/venue",
+    resp = await client.post(
+        f"/api/v1/equipment/{equip.id}/unassign-venue",
         headers=auth_headers(admin_tok),
     )
     assert resp.status_code == 200
@@ -423,8 +423,8 @@ async def test_unassign_venue(client, db_session):
 async def test_unassign_already_unassigned(client, db_session):
     admin_tok = await _admin_token(client, db_session, "eq_unas_none")
     equip = await create_test_equipment(db_session, name="No Venue E")
-    resp = await client.delete(
-        f"/api/v1/equipment/{equip.id}/venue",
+    resp = await client.post(
+        f"/api/v1/equipment/{equip.id}/unassign-venue",
         headers=auth_headers(admin_tok),
     )
     assert resp.status_code == 400
@@ -645,8 +645,8 @@ async def test_audit_equipment_unassign_venue(client, db_session):
     admin_tok = await _admin_token(client, db_session, "eq_audit_ua")
     venue = await create_test_venue(db_session, name="Audit UA Lab")
     equip = await create_test_equipment(db_session, name="Audit UA E", venue_id=venue.id)
-    await client.delete(
-        f"/api/v1/equipment/{equip.id}/venue",
+    await client.post(
+        f"/api/v1/equipment/{equip.id}/unassign-venue",
         headers=auth_headers(admin_tok),
     )
 
@@ -729,8 +729,8 @@ async def test_patch_status_404(client, db_session):
 @pytest.mark.asyncio(loop_scope="session")
 async def test_unassign_venue_404(client, db_session):
     token = await _admin_token(client, db_session, "eq_404_ua")
-    resp = await client.delete(
-        "/api/v1/equipment/99999/venue",
+    resp = await client.post(
+        "/api/v1/equipment/99999/unassign-venue",
         headers=auth_headers(token),
     )
     assert resp.status_code == 404
@@ -790,3 +790,84 @@ async def test_venues_endpoint_still_works(client, db_session):
     token = await _admin_token(client, db_session, "eq_smoke_adm2")
     resp = await client.get("/api/v1/venues", headers=auth_headers(token))
     assert resp.status_code == 200
+
+
+# ===================================================================
+# 10. CE Review Fix Tests
+# ===================================================================
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_duplicate_serial_number_returns_409(client, db_session):
+    token = await _admin_token(client, db_session, "eq_dup_sn")
+    await _create_equip_via_api(client, token, name="First SN", serial_number="SN-DUP-001")
+    resp = await _create_equip_via_api(client, token, name="Second SN", serial_number="SN-DUP-001")
+    assert resp.status_code == 409
+    assert "序列号" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_duplicate_serial_returns_409(client, db_session):
+    token = await _admin_token(client, db_session, "eq_dup_upd")
+    await _create_equip_via_api(client, token, name="SN Owner", serial_number="SN-UNIQ-001")
+    resp2 = await _create_equip_via_api(client, token, name="SN Thief")
+    eid = resp2.json()["id"]
+    resp3 = await client.put(
+        f"/api/v1/equipment/{eid}",
+        json={"serial_number": "SN-UNIQ-001"},
+        headers=auth_headers(token),
+    )
+    assert resp3.status_code == 409
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_rejects_status_field(client, db_session):
+    token = await _admin_token(client, db_session, "eq_no_st_upd")
+    resp = await _create_equip_via_api(client, token, name="No Status Upd")
+    eid = resp.json()["id"]
+    resp2 = await client.put(
+        f"/api/v1/equipment/{eid}",
+        json={"status": "inactive"},
+        headers=auth_headers(token),
+    )
+    assert resp2.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_status_change_only_via_patch(client, db_session):
+    token = await _admin_token(client, db_session, "eq_patch_only")
+    resp = await _create_equip_via_api(client, token, name="Patch Only E")
+    eid = resp.json()["id"]
+    resp2 = await client.patch(
+        f"/api/v1/equipment/{eid}/status",
+        json={"status": "maintenance"},
+        headers=auth_headers(token),
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["status"] == "maintenance"
+
+    result = await db_session.execute(
+        select(AuditLog).where(
+            AuditLog.entity_type == "equipment",
+            AuditLog.entity_id == eid,
+            AuditLog.action == "status_change",
+        )
+    )
+    entry = result.scalar_one_or_none()
+    assert entry is not None
+    changes = json.loads(entry.changes)
+    assert changes["old_status"] == "active"
+    assert changes["new_status"] == "maintenance"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_unassign_venue_permission_teacher_forbidden(client, db_session):
+    admin_tok = await _admin_token(client, db_session, "eq_ua_perm_adm")
+    teacher_tok = await _teacher_token(client, db_session, "eq_ua_perm_tch")
+    venue = await create_test_venue(db_session, name="Perm Lab")
+    equip = await create_test_equipment(db_session, name="Perm E", venue_id=venue.id)
+    resp = await client.post(
+        f"/api/v1/equipment/{equip.id}/unassign-venue",
+        headers=auth_headers(teacher_tok),
+    )
+    assert resp.status_code == 403
