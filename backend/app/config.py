@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o-mini"
     AI_BASE_URL: str = ""
+    XR_ENABLED: bool = False
+    XR_PROVIDER: str = "null"
+    XR_CALLBACK_SECRET: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
