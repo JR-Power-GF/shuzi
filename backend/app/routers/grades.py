@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import require_role
 from app.models.grade import Grade
 from app.models.submission import Submission
@@ -98,7 +98,7 @@ async def publish_grades(
         raise HTTPException(status_code=400, detail="没有可发布的成绩")
 
     task.grades_published = True
-    task.grades_published_at = datetime.datetime.utcnow()
+    task.grades_published_at = _utcnow_naive()
     task.grades_published_by = current_user["id"]
     await db.flush()
 

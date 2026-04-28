@@ -10,6 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import _utcnow_naive
 from app.models.ai_config import AIConfig
 
 
@@ -79,7 +80,7 @@ class AIService:
         budget_key = f"budget_{role}"
         budget = config.get(budget_key, 50000)
 
-        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = _utcnow_naive().replace(hour=0, minute=0, second=0, microsecond=0)
         result = await db.execute(
             select(func.coalesce(func.sum(
                 AIUsageLog.prompt_tokens + AIUsageLog.completion_tokens
@@ -115,6 +116,32 @@ class AIService:
         await db.flush()
         return log.id
 
+    async def _log_usage_eager(
+        self, db: AsyncSession, *, user_id: int, endpoint: str, model: str,
+        prompt_tokens: int, completion_tokens: int, cost_microdollars: int,
+        latency_ms: int, status: str,
+    ) -> int:
+        """Log usage in a separate session that commits immediately.
+        Uses the same engine as the parent session to work with test databases."""
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+        from app.models.ai_usage_log import AIUsageLog
+
+        factory = async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as eager_session:
+            log = AIUsageLog(
+                user_id=user_id,
+                endpoint=endpoint,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_microdollars=cost_microdollars,
+                latency_ms=latency_ms,
+                status=status,
+            )
+            eager_session.add(log)
+            await eager_session.commit()
+            return log.id
+
     async def generate(
         self, *, db: AsyncSession, prompt: str, user_id: int,
         role: str, endpoint: str = "",
@@ -127,6 +154,8 @@ class AIService:
         try:
             response = await self.provider.generate(prompt, model)
             latency_ms = int((time.time() - start) * 1000)
+            # Prices are per-1M tokens (e.g. GPT-4o-mini: $0.15/1M input, $0.60/1M output).
+            # tokens * price_per_million directly yields microdollars.
             cost = int(
                 response.prompt_tokens * config.get("price_input", 0.15)
                 + response.completion_tokens * config.get("price_output", 0.60)
@@ -151,8 +180,9 @@ class AIService:
         except Exception as e:
             latency_ms = int((time.time() - start) * 1000)
             try:
-                await self._log_usage(
-                    db, user_id=user_id, endpoint=endpoint, model=model,
+                await self._log_usage_eager(
+                    db,
+                    user_id=user_id, endpoint=endpoint, model=model,
                     prompt_tokens=0, completion_tokens=0, cost_microdollars=0,
                     latency_ms=latency_ms, status="error",
                 )
@@ -202,3 +232,9 @@ def get_ai_service() -> AIService:
         else:
             _ai_service = AIService(provider=MockProvider())
     return _ai_service
+
+
+def reset_ai_service() -> None:
+    """Reset the singleton so next call re-reads config. Call after config changes."""
+    global _ai_service
+    _ai_service = None

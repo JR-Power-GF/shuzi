@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import get_current_user, require_role
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -39,7 +39,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="账户已停用")
 
-    now = datetime.datetime.utcnow()
+    now = _utcnow_naive()
     if user.locked_until and user.locked_until > now:
         raise HTTPException(status_code=403, detail="账户已锁定，请30分钟后重试")
 

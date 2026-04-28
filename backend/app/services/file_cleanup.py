@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import _utcnow_naive
 from app.models.submission_file import SubmissionFile
 
 
@@ -15,7 +16,7 @@ async def cleanup_orphan_files(db: AsyncSession) -> int:
     if not os.path.isdir(upload_dir):
         return 0
 
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+    cutoff = _utcnow_naive() - datetime.timedelta(hours=24)
     deleted = 0
 
     result = await db.execute(select(SubmissionFile.file_path))
@@ -29,7 +30,7 @@ async def cleanup_orphan_files(db: AsyncSession) -> int:
             continue
 
         try:
-            mtime = datetime.datetime.utcfromtimestamp(os.path.getmtime(filepath))
+            mtime = datetime.datetime.fromtimestamp(os.path.getmtime(filepath), tz=datetime.timezone.utc).replace(tzinfo=None)
             if mtime < cutoff:
                 os.remove(filepath)
                 deleted += 1

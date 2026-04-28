@@ -3,7 +3,7 @@ import datetime
 from sqlalchemy import String, Integer, BigInteger, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, _utcnow_naive
 
 
 class SubmissionFile(Base):
@@ -18,5 +18,5 @@ class SubmissionFile(Base):
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     file_type: Mapped[str] = mapped_column(String(50), nullable=False)
     uploaded_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, nullable=False
     )

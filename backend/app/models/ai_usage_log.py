@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, CheckConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, _utcnow_naive
 
 
 class AIUsageLog(Base):
@@ -26,5 +26,5 @@ class AIUsageLog(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="success", nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, nullable=False
     )

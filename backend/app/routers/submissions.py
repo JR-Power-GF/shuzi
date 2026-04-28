@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import get_current_user, require_role
 from app.models.grade import Grade
 from app.models.submission import Submission
@@ -42,7 +42,7 @@ async def create_submission(
     if user.primary_class_id != task.class_id:
         raise HTTPException(status_code=403, detail="你不属于该任务的班级")
 
-    now = datetime.datetime.utcnow()
+    now = _utcnow_naive()
     deadline = task.deadline.replace(tzinfo=None) if task.deadline.tzinfo else task.deadline
     is_late = now > deadline
 

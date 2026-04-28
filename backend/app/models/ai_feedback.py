@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, SmallInteger, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, _utcnow_naive
 
 
 class AIFeedback(Base):
@@ -23,5 +23,5 @@ class AIFeedback(Base):
     rating: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, nullable=False
     )

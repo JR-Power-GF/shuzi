@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import require_role
 from app.models.class_ import Class
 from app.models.course import Course
@@ -89,7 +89,7 @@ async def admin_dashboard(
     avg_score = avg_result.scalar()
 
     # Nearby deadline: nearest future deadline among active tasks
-    now = datetime.datetime.utcnow()
+    now = _utcnow_naive()
     deadline_result = await db.execute(
         select(Task.deadline).where(
             Task.status == "active", Task.deadline > now,
@@ -213,7 +213,7 @@ async def teacher_dashboard(
     my_avg_score = avg_result.scalar()
 
     # Nearby deadline: nearest future deadline among teacher's active tasks
-    now = datetime.datetime.utcnow()
+    now = _utcnow_naive()
     deadline_result = await db.execute(
         select(Task.deadline).where(
             Task.created_by == teacher_id, Task.status == "active", Task.deadline > now,
@@ -281,46 +281,70 @@ async def course_stats(
     course_rows = await db.execute(query)
     courses_data = course_rows.all()
 
+    if not courses_data:
+        return CourseStatsResponse(courses=[])
+
+    course_ids = [row.course_id for row in courses_data]
+
+    # Batch queries (5 queries total instead of 5N)
+    task_counts_result = await db.execute(
+        select(Task.course_id, func.count())
+        .where(Task.course_id.in_(course_ids))
+        .group_by(Task.course_id)
+    )
+    task_counts = dict(task_counts_result.all())
+
+    sub_counts_result = await db.execute(
+        select(Task.course_id, func.count())
+        .select_from(Submission)
+        .join(Task, Task.id == Submission.task_id)
+        .where(Task.course_id.in_(course_ids))
+        .group_by(Task.course_id)
+    )
+    sub_counts = dict(sub_counts_result.all())
+
+    pending_result = await db.execute(
+        select(Task.course_id, func.count())
+        .select_from(Submission)
+        .outerjoin(Grade, Grade.submission_id == Submission.id)
+        .join(Task, Task.id == Submission.task_id)
+        .where(Task.course_id.in_(course_ids), Grade.id.is_(None))
+        .group_by(Task.course_id)
+    )
+    pending_counts = dict(pending_result.all())
+
+    graded_result = await db.execute(
+        select(Task.course_id, func.count())
+        .select_from(Submission)
+        .join(Grade, Grade.submission_id == Submission.id)
+        .join(Task, Task.id == Submission.task_id)
+        .where(Task.course_id.in_(course_ids))
+        .group_by(Task.course_id)
+    )
+    graded_counts = dict(graded_result.all())
+
+    avg_result = await db.execute(
+        select(Task.course_id, func.avg(Grade.score))
+        .select_from(Grade)
+        .join(Submission, Submission.id == Grade.submission_id)
+        .join(Task, Task.id == Submission.task_id)
+        .where(Task.course_id.in_(course_ids))
+        .group_by(Task.course_id)
+    )
+    avg_scores = dict(avg_result.all())
+
     result = []
     for row in courses_data:
         cid = row.course_id
-
-        task_count = await db.execute(
-            select(func.count()).select_from(Task).where(Task.course_id == cid)
-        )
-        submission_count = await db.execute(
-            select(func.count()).select_from(Submission)
-            .join(Task, Task.id == Submission.task_id)
-            .where(Task.course_id == cid)
-        )
-        pending = await db.execute(
-            select(func.count()).select_from(Submission)
-            .outerjoin(Grade, Grade.submission_id == Submission.id)
-            .join(Task, Task.id == Submission.task_id)
-            .where(Task.course_id == cid, Grade.id.is_(None))
-        )
-        graded = await db.execute(
-            select(func.count()).select_from(Submission)
-            .join(Grade, Grade.submission_id == Submission.id)
-            .join(Task, Task.id == Submission.task_id)
-            .where(Task.course_id == cid)
-        )
-        avg_score = await db.execute(
-            select(func.avg(Grade.score))
-            .join(Submission, Submission.id == Grade.submission_id)
-            .join(Task, Task.id == Submission.task_id)
-            .where(Task.course_id == cid)
-        )
-        avg_val = avg_score.scalar()
-
+        avg_val = avg_scores.get(cid)
         result.append(CourseStatItem(
             course_id=cid,
             course_name=row.course_name,
             teacher_name=row.teacher_name,
-            task_count=task_count.scalar(),
-            submission_count=submission_count.scalar(),
-            pending_grade_count=pending.scalar(),
-            graded_count=graded.scalar(),
+            task_count=task_counts.get(cid, 0),
+            submission_count=sub_counts.get(cid, 0),
+            pending_grade_count=pending_counts.get(cid, 0),
+            graded_count=graded_counts.get(cid, 0),
             average_score=round(avg_val, 1) if avg_val is not None else None,
         ))
 

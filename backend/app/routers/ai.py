@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import get_current_user, require_role
 from app.models.ai_config import AIConfig
 from app.models.ai_feedback import AIFeedback
@@ -18,7 +18,7 @@ from app.schemas.ai import (
     AIStatsOut, AIFeedbackSummary,
     AIConfigOut, AIConfigUpdate, AITestOut,
 )
-from app.services.ai import AIService, AIServiceError, BudgetExceededError, MockProvider, get_ai_service
+from app.services.ai import AIService, AIServiceError, BudgetExceededError, MockProvider, get_ai_service, reset_ai_service
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -68,6 +68,8 @@ async def query_usage(
     user_id: Optional[int] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     current_user: dict = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -82,7 +84,7 @@ async def query_usage(
     total_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = total_result.scalar()
 
-    result = await db.execute(query.order_by(AIUsageLog.id.desc()).limit(100))
+    result = await db.execute(query.order_by(AIUsageLog.id.desc()).offset(offset).limit(limit))
     logs = result.scalars().all()
 
     items = [
@@ -105,7 +107,7 @@ async def query_usage(
     role_budget_defaults = {"admin": 500000, "teacher": 200000, "student": 50000}
     budget_limit = int(float(configs.get(f"budget_{role}", str(role_budget_defaults.get(role, 50000)))))
 
-    today_start = dt.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = _utcnow_naive().replace(hour=0, minute=0, second=0, microsecond=0)
     used_result = await db.execute(
         select(func.coalesce(func.sum(
             AIUsageLog.prompt_tokens + AIUsageLog.completion_tokens
@@ -251,4 +253,5 @@ async def update_config(
                 db.add(AIConfig(key=key, value=str(value), updated_by=current_user["id"]))
     await db.flush()
 
+    reset_ai_service()
     return await read_config(current_user=current_user, db=db)

@@ -26,7 +26,7 @@ class UserUpdate(BaseModel):
     real_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    role: Optional[str] = Field(None, pattern=r'^(admin|teacher|student)$')
+    role: Optional[str] = Field(None, pattern=r'^(admin|teacher|student|facility_manager)$')
     primary_class_id: Optional[int] = None
     is_active: Optional[bool] = None
 
