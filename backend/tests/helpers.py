@@ -4,6 +4,7 @@ import datetime
 import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.booking import Booking, BookingEquipment
 from app.models.class_ import Class
 from app.models.equipment import Equipment
 from app.models.task import Task
@@ -128,3 +129,33 @@ async def create_test_equipment(
     db.add(equip)
     await db.flush()
     return equip
+
+
+async def create_test_booking(
+    db: AsyncSession,
+    *,
+    venue_id: int,
+    title: str = "Test Booking",
+    start_time: datetime.datetime = None,
+    end_time: datetime.datetime = None,
+    booked_by: int = 1,
+    status: str = "approved",
+    equipment_ids: list[int] = None,
+) -> Booking:
+    now = datetime.datetime(2026, 6, 1, 9, 0)
+    booking = Booking(
+        venue_id=venue_id,
+        title=title,
+        start_time=start_time or now,
+        end_time=end_time or (now + datetime.timedelta(hours=2)),
+        booked_by=booked_by,
+        status=status,
+    )
+    db.add(booking)
+    await db.flush()
+
+    for eid in (equipment_ids or []):
+        be = BookingEquipment(booking_id=booking.id, equipment_id=eid)
+        db.add(be)
+    await db.flush()
+    return booking
