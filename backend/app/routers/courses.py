@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
 from app.models.course import Course
@@ -157,18 +157,29 @@ async def list_courses(
     result = await db.execute(query)
     courses = result.scalars().all()
 
-    response = []
-    for course in courses:
-        teacher_name_result = await db.execute(
-            select(User.real_name).where(User.id == course.teacher_id)
-        )
-        teacher_name = teacher_name_result.scalar_one()
-        task_count_result = await db.execute(
-            select(func.count()).select_from(Task).where(Task.course_id == course.id)
-        )
-        task_count = task_count_result.scalar()
-        response.append(_course_to_response(course, teacher_name, task_count))
-    return response
+    if not courses:
+        return []
+
+    # Batch: teacher names
+    teacher_ids = list({c.teacher_id for c in courses})
+    teacher_result = await db.execute(
+        select(User.id, User.real_name).where(User.id.in_(teacher_ids))
+    )
+    teacher_names = dict(teacher_result.all())
+
+    # Batch: task counts
+    course_ids = [c.id for c in courses]
+    task_count_result = await db.execute(
+        select(Task.course_id, func.count())
+        .where(Task.course_id.in_(course_ids))
+        .group_by(Task.course_id)
+    )
+    task_counts = dict(task_count_result.all())
+
+    return [
+        _course_to_response(c, teacher_names.get(c.teacher_id, ""), task_counts.get(c.id, 0))
+        for c in courses
+    ]
 
 
 @router.get("/my", response_model=list[CourseProgressResponse])
@@ -195,78 +206,88 @@ async def student_course_cards(
     )
     courses = courses_result.scalars().all()
 
-    # 3. For each course, compute progress
-    response = []
-    for course in courses:
-        # Count active tasks in this course for this class
-        task_count_result = await db.execute(
-            select(func.count()).select_from(Task).where(
-                Task.course_id == course.id,
-                Task.class_id == class_id,
-                Task.status == "active",
-            )
-        )
-        task_count = task_count_result.scalar()
+    if not courses:
+        return []
 
-        # Count student's submissions for tasks in this course
-        submitted_result = await db.execute(
-            select(func.count()).select_from(Submission).where(
-                Submission.task_id.in_(
-                    select(Task.id).where(
-                        Task.course_id == course.id,
-                        Task.class_id == class_id,
-                    )
-                ),
-                Submission.student_id == current_user["id"],
-            )
-        )
-        submitted_count = submitted_result.scalar()
+    course_ids = [c.id for c in courses]
+    student_id = current_user["id"]
 
-        # Count graded submissions (submissions with a Grade record)
-        graded_result = await db.execute(
-            select(func.count()).select_from(Submission).join(
-                Grade, Grade.submission_id == Submission.id
-            ).where(
-                Submission.task_id.in_(
-                    select(Task.id).where(
-                        Task.course_id == course.id,
-                        Task.class_id == class_id,
-                    )
-                ),
-                Submission.student_id == current_user["id"],
-            )
-        )
-        graded_count = graded_result.scalar()
+    # Batch: teacher names
+    teacher_ids = list({c.teacher_id for c in courses})
+    teacher_result = await db.execute(
+        select(User.id, User.real_name).where(User.id.in_(teacher_ids))
+    )
+    teacher_names = dict(teacher_result.all())
 
-        # Nearest future deadline
-        deadline_result = await db.execute(
-            select(func.min(Task.deadline)).where(
-                Task.course_id == course.id,
-                Task.class_id == class_id,
-                Task.status == "active",
-                Task.deadline > datetime.datetime.utcnow(),
-            )
+    # Batch: active task counts per course for this class
+    task_count_result = await db.execute(
+        select(Task.course_id, func.count())
+        .where(
+            Task.course_id.in_(course_ids),
+            Task.class_id == class_id,
+            Task.status == "active",
         )
-        nearest_deadline = deadline_result.scalar_one_or_none()
+        .group_by(Task.course_id)
+    )
+    task_counts = dict(task_count_result.all())
 
-        # Teacher name
-        teacher_name_result = await db.execute(
-            select(User.real_name).where(User.id == course.teacher_id)
+    # Batch: submitted counts per course for this student
+    submitted_result = await db.execute(
+        select(Task.course_id, func.count())
+        .select_from(Submission)
+        .join(Task, Task.id == Submission.task_id)
+        .where(
+            Task.course_id.in_(course_ids),
+            Task.class_id == class_id,
+            Submission.student_id == student_id,
         )
-        teacher_name = teacher_name_result.scalar_one()
+        .group_by(Task.course_id)
+    )
+    submitted_counts = dict(submitted_result.all())
 
-        response.append(CourseProgressResponse(
-            id=course.id,
-            name=course.name,
-            description=course.description,
-            semester=course.semester,
-            teacher_name=teacher_name,
-            task_count=task_count,
-            submitted_count=submitted_count,
-            graded_count=graded_count,
-            nearest_deadline=nearest_deadline,
-        ))
-    return response
+    # Batch: graded counts per course for this student
+    graded_result = await db.execute(
+        select(Task.course_id, func.count())
+        .select_from(Submission)
+        .join(Grade, Grade.submission_id == Submission.id)
+        .join(Task, Task.id == Submission.task_id)
+        .where(
+            Task.course_id.in_(course_ids),
+            Task.class_id == class_id,
+            Submission.student_id == student_id,
+        )
+        .group_by(Task.course_id)
+    )
+    graded_counts = dict(graded_result.all())
+
+    # Batch: nearest deadline per course
+    now = _utcnow_naive()
+    deadline_result = await db.execute(
+        select(Task.course_id, func.min(Task.deadline))
+        .where(
+            Task.course_id.in_(course_ids),
+            Task.class_id == class_id,
+            Task.status == "active",
+            Task.deadline > now,
+        )
+        .group_by(Task.course_id)
+    )
+    deadlines = dict(deadline_result.all())
+
+    return [
+        CourseProgressResponse(
+            id=c.id,
+            name=c.name,
+            description=c.description,
+            semester=c.semester,
+            teacher_name=teacher_names.get(c.teacher_id, ""),
+            task_count=task_counts.get(c.id, 0),
+            submitted_count=submitted_counts.get(c.id, 0),
+            graded_count=graded_counts.get(c.id, 0),
+            nearest_deadline=deadlines.get(c.id),
+        )
+        for c in courses
+    ]
 
 
 @router.post("/{course_id}/generate-summary", response_model=SummaryGenerateResponse)

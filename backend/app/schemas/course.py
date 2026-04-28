@@ -1,13 +1,13 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CourseCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    semester: str
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    semester: str = Field(..., pattern=r'^\d{4}-\d{4}-[12]$')
 
 
 class CourseUpdate(BaseModel):

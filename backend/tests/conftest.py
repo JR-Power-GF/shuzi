@@ -89,6 +89,24 @@ async def client(db_session: AsyncSession):
     fastapi_app.dependency_overrides.clear()
 
 
+@pytest_asyncio.fixture(loop_scope="session")
+async def second_db_session(test_session_maker):
+    """Provide a SECOND independent session for concurrency tests."""
+    async with test_session_maker() as session:
+        yield session
+        await session.rollback()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def concurrent_sessions(test_session_maker):
+    """Provide TWO independent sessions for concurrent access testing."""
+    async with test_session_maker() as session_a:
+        async with test_session_maker() as session_b:
+            yield {"session_a": session_a, "session_b": session_b}
+            await session_b.rollback()
+        await session_a.rollback()
+
+
 @pytest.fixture
 def upload_dir(tmp_path):
     uploads = tmp_path / "uploads"

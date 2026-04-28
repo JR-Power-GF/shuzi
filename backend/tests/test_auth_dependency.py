@@ -112,3 +112,63 @@ def test_require_role_blocks_wrong_role():
             dep(current_user={"id": 1, "role": "student"})
         )
     assert exc_info.value.status_code == 403
+
+
+def _call_require_role_or_owner(dep, user_dict, owner_id_return):
+    """Helper to call require_role_or_owner checker with mocked DB."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    async def mock_getter(current_user, db):
+        return owner_id_return
+
+    mock_db = AsyncMock()
+    return asyncio.run(dep(current_user=user_dict, db=mock_db))
+
+
+def test_require_role_or_owner_allows_admin():
+    from app.dependencies.auth import require_role_or_owner
+
+    async def getter(user, db):
+        return 999
+
+    dep = require_role_or_owner(["admin"], getter)
+    result = _call_require_role_or_owner(dep, {"id": 1, "role": "admin"}, 999)
+    assert result["role"] == "admin"
+
+
+def test_require_role_or_owner_allows_owner():
+    from app.dependencies.auth import require_role_or_owner
+
+    async def getter(user, db):
+        return 42
+
+    dep = require_role_or_owner(["admin"], getter)
+    result = _call_require_role_or_owner(dep, {"id": 42, "role": "teacher"}, 42)
+    assert result["id"] == 42
+
+
+def test_require_role_or_owner_rejects_non_owner():
+    from app.dependencies.auth import require_role_or_owner
+    from fastapi import HTTPException
+
+    async def getter(user, db):
+        return 999
+
+    dep = require_role_or_owner(["admin"], getter)
+    with pytest.raises(HTTPException) as exc_info:
+        _call_require_role_or_owner(dep, {"id": 1, "role": "teacher"}, 999)
+    assert exc_info.value.status_code == 403
+
+
+def test_require_role_or_owner_rejects_when_owner_id_none():
+    from app.dependencies.auth import require_role_or_owner
+    from fastapi import HTTPException
+
+    async def getter(user, db):
+        return None
+
+    dep = require_role_or_owner(["admin"], getter)
+    with pytest.raises(HTTPException) as exc_info:
+        _call_require_role_or_owner(dep, {"id": 1, "role": "teacher"}, None)
+    assert exc_info.value.status_code == 403

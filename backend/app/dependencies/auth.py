@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -66,3 +66,30 @@ def require_role(allowed_roles):
             )
         return current_user
     return role_checker
+
+
+def require_role_or_owner(
+    allowed_roles: list[str] | str,
+    owner_id_getter: Callable[[dict, AsyncSession], Awaitable[int | None]],
+):
+    """Dependency that allows access to allowed_roles OR the resource owner."""
+    if isinstance(allowed_roles, str):
+        allowed_roles = [allowed_roles]
+
+    async def checker(
+        current_user: dict = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        if current_user["role"] in allowed_roles:
+            return current_user
+
+        owner_id = await owner_id_getter(current_user, db)
+        if owner_id is not None and current_user["id"] == owner_id:
+            return current_user
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+
+    return checker
