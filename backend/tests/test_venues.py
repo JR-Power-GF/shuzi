@@ -803,3 +803,268 @@ async def test_users_endpoint_still_works(client, db_session):
     token = await _admin_token(client, db_session, "v_smoke_admin2")
     resp = await client.get("/api/users", headers=auth_headers(token))
     assert resp.status_code == 200
+
+
+# ===================================================================
+# 9. CE Review Fix Tests
+# ===================================================================
+
+
+# --- B1: Student permission boundaries ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_venue_student_forbidden(client, db_session):
+    admin_tok = await _admin_token(client, db_session, "v_stu_admin")
+    student_tok = await _student_token(client, db_session, "v_stu_detail")
+    resp = await _create_venue_via_api(client, admin_tok, name="Student No See")
+    vid = resp.json()["id"]
+    resp2 = await client.get(
+        f"/api/v1/venues/{vid}",
+        headers=auth_headers(student_tok),
+    )
+    assert resp2.status_code == 403
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_blackouts_student_forbidden(client, db_session):
+    admin_tok = await _admin_token(client, db_session, "v_stu_bo_admin")
+    student_tok = await _student_token(client, db_session, "v_stu_bo")
+    resp = await _create_venue_via_api(client, admin_tok, name="Student BO V")
+    vid = resp.json()["id"]
+    resp2 = await client.get(
+        f"/api/v1/venues/{vid}/blackouts",
+        headers=auth_headers(student_tok),
+    )
+    assert resp2.status_code == 403
+
+
+# --- B2: VenueStatusUpdate Pydantic model ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_patch_status_missing_status_key(client, db_session):
+    token = await _admin_token(client, db_session, "v_st_missing")
+    resp = await _create_venue_via_api(client, token, name="Status Missing V")
+    vid = resp.json()["id"]
+    resp2 = await client.patch(
+        f"/api/v1/venues/{vid}/status",
+        json={},
+        headers=auth_headers(token),
+    )
+    assert resp2.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_patch_status_extra_fields_rejected(client, db_session):
+    token = await _admin_token(client, db_session, "v_st_extra")
+    resp = await _create_venue_via_api(client, token, name="Status Extra V")
+    vid = resp.json()["id"]
+    resp2 = await client.patch(
+        f"/api/v1/venues/{vid}/status",
+        json={"status": "active", "extra_key": "bad"},
+        headers=auth_headers(token),
+    )
+    assert resp2.status_code == 422
+
+
+# --- S1: Blackout audit logging ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_audit_blackout_create(client, db_session):
+    token = await _admin_token(client, db_session, "v_bo_audit_c")
+    resp = await _create_venue_via_api(client, token, name="BO Audit Create V")
+    vid = resp.json()["id"]
+    await client.post(
+        f"/api/v1/venues/{vid}/blackouts",
+        json={"start_date": "2026-09-01", "end_date": "2026-09-02", "reason": "Audit test"},
+        headers=auth_headers(token),
+    )
+
+    result = await db_session.execute(
+        select(AuditLog).where(
+            AuditLog.entity_type == "venue",
+            AuditLog.entity_id == vid,
+            AuditLog.action == "create_blackout",
+        )
+    )
+    entry = result.scalar_one_or_none()
+    assert entry is not None
+    changes = json.loads(entry.changes)
+    assert changes["start_date"] == "2026-09-01"
+    assert changes["reason"] == "Audit test"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_audit_blackout_delete(client, db_session):
+    token = await _admin_token(client, db_session, "v_bo_audit_d")
+    resp = await _create_venue_via_api(client, token, name="BO Audit Del V")
+    vid = resp.json()["id"]
+    resp2 = await client.post(
+        f"/api/v1/venues/{vid}/blackouts",
+        json={"start_date": "2026-10-01", "end_date": "2026-10-02"},
+        headers=auth_headers(token),
+    )
+    bid = resp2.json()["id"]
+    await client.delete(
+        f"/api/v1/venues/{vid}/blackouts/{bid}",
+        headers=auth_headers(token),
+    )
+
+    result = await db_session.execute(
+        select(AuditLog).where(
+            AuditLog.entity_type == "venue",
+            AuditLog.entity_id == vid,
+            AuditLog.action == "delete_blackout",
+        )
+    )
+    entry = result.scalar_one_or_none()
+    assert entry is not None
+    changes = json.loads(entry.changes)
+    assert changes["blackout_id"] == bid
+
+
+# --- S2: VenueUpdate capacity validation ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_venue_capacity_zero_rejected(client, db_session):
+    token = await _admin_token(client, db_session, "v_cap_zero")
+    resp = await _create_venue_via_api(client, token, name="Cap Zero V")
+    vid = resp.json()["id"]
+    resp2 = await client.put(
+        f"/api/v1/venues/{vid}",
+        json={"capacity": 0},
+        headers=auth_headers(token),
+    )
+    assert resp2.status_code == 422
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_venue_capacity_negative_rejected(client, db_session):
+    token = await _admin_token(client, db_session, "v_cap_neg")
+    resp = await _create_venue_via_api(client, token, name="Cap Neg V")
+    vid = resp.json()["id"]
+    resp2 = await client.put(
+        f"/api/v1/venues/{vid}",
+        json={"capacity": -5},
+        headers=auth_headers(token),
+    )
+    assert resp2.status_code == 422
+
+
+# --- S6: VenueCreate extra fields ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_create_venue_extra_fields_rejected(client, db_session):
+    token = await _admin_token(client, db_session, "v_extra_field")
+    resp = await client.post(
+        "/api/v1/venues",
+        json={"name": "Extra V", "bogus_field": "bad"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 422
+
+
+# --- 404 paths for availability/blackout ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_set_availability_404_nonexistent_venue(client, db_session):
+    token = await _admin_token(client, db_session, "v_avail_404")
+    resp = await client.put(
+        "/api/v1/venues/99999/availability",
+        json={"slots": [{"day_of_week": 0, "start_time": "08:00", "end_time": "12:00"}]},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_create_blackout_404_nonexistent_venue(client, db_session):
+    token = await _admin_token(client, db_session, "v_bo_404")
+    resp = await client.post(
+        "/api/v1/venues/99999/blackouts",
+        json={"start_date": "2026-06-01", "end_date": "2026-06-02"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_blackouts_404_nonexistent_venue(client, db_session):
+    token = await _admin_token(client, db_session, "v_lbo_404")
+    resp = await client.get(
+        "/api/v1/venues/99999/blackouts",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_patch_status_404_nonexistent_venue(client, db_session):
+    token = await _admin_token(client, db_session, "v_st_404")
+    resp = await client.patch(
+        "/api/v1/venues/99999/status",
+        json={"status": "inactive"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404
+
+
+# --- Stronger assertions ---
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_delete_blackout_actually_removes(client, db_session):
+    token = await _admin_token(client, db_session, "v_bo_gone")
+    resp = await _create_venue_via_api(client, token, name="BO Gone V")
+    vid = resp.json()["id"]
+    resp2 = await client.post(
+        f"/api/v1/venues/{vid}/blackouts",
+        json={"start_date": "2026-11-01", "end_date": "2026-11-02", "reason": "To delete"},
+        headers=auth_headers(token),
+    )
+    bid = resp2.json()["id"]
+    await client.delete(
+        f"/api/v1/venues/{vid}/blackouts/{bid}",
+        headers=auth_headers(token),
+    )
+    resp3 = await client.get(
+        f"/api/v1/venues/{vid}/blackouts",
+        headers=auth_headers(token),
+    )
+    ids = [b["id"] for b in resp3.json()]
+    assert bid not in ids
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_venue_teacher_active_checks_fields(client, db_session):
+    admin_tok = await _admin_token(client, db_session, "v_teach_fld_adm")
+    teacher_tok = await _teacher_token(client, db_session, "v_teach_fld")
+    resp = await _create_venue_via_api(client, admin_tok, name="Teacher Fields V", capacity=50)
+    vid = resp.json()["id"]
+    resp2 = await client.get(
+        f"/api/v1/venues/{vid}",
+        headers=auth_headers(teacher_tok),
+    )
+    assert resp2.status_code == 200
+    body = resp2.json()
+    assert body["name"] == "Teacher Fields V"
+    assert body["capacity"] == 50
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_venue_fm_checks_capacity(client, db_session):
+    fm_tok = await _fm_token(client, db_session, "v_fm_upd")
+    resp = await _create_venue_via_api(client, fm_tok, name="FM Update V", capacity=30)
+    vid = resp.json()["id"]
+    resp2 = await client.put(
+        f"/api/v1/venues/{vid}",
+        json={"capacity": 40},
+        headers=auth_headers(fm_tok),
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["capacity"] == 40

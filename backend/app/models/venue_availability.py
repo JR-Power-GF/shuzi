@@ -1,10 +1,9 @@
 import datetime
-from typing import Optional
 
-from sqlalchemy import String, Integer, Time, DateTime, ForeignKey, CheckConstraint, UniqueConstraint
+from sqlalchemy import Integer, Time, ForeignKey, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base, _utcnow_naive
+from app.database import Base
 
 
 class VenueAvailability(Base):

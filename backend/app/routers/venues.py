@@ -1,8 +1,6 @@
 import datetime
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +14,7 @@ from app.schemas.venue import (
     VenueUpdate,
     VenueResponse,
     VenueListResponse,
+    VenueStatusUpdate,
     AvailabilitySlotsUpdate,
     BlackoutCreate,
     BlackoutResponse,
@@ -26,7 +25,6 @@ router = APIRouter(prefix="/api/v1/venues", tags=["venues"])
 
 
 def _venue_to_response(venue: Venue, availability: list[dict] | None = None) -> dict:
-    """Convert a Venue ORM object to a response dict."""
     avail = availability if availability is not None else []
     return {
         "id": venue.id,
@@ -43,7 +41,6 @@ def _venue_to_response(venue: Venue, availability: list[dict] | None = None) -> 
 
 
 async def _get_availability(db: AsyncSession, venue_id: int) -> list[dict]:
-    """Fetch availability slots for a venue as list of dicts."""
     result = await db.execute(
         select(VenueAvailability)
         .where(VenueAvailability.venue_id == venue_id)
@@ -59,6 +56,14 @@ async def _get_availability(db: AsyncSession, venue_id: int) -> list[dict]:
         }
         for s in slots
     ]
+
+
+async def _get_venue_or_404(db: AsyncSession, venue_id: int) -> Venue:
+    result = await db.execute(select(Venue).where(Venue.id == venue_id))
+    venue = result.scalar_one_or_none()
+    if not venue:
+        raise HTTPException(status_code=404, detail="场地不存在")
+    return venue
 
 
 # ---------------------------------------------------------------------------
@@ -96,26 +101,23 @@ async def create_venue(
 
 @router.get("", response_model=VenueListResponse)
 async def list_venues(
-    status_filter: Optional[str] = Query(None, alias="status"),
-    capacity_min: Optional[int] = Query(None),
-    capacity_max: Optional[int] = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    capacity_min: int | None = Query(None),
+    capacity_max: int | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Base query
     query = select(Venue)
     count_query = select(func.count()).select_from(Venue)
 
-    # Teachers can only see active venues
     if current_user["role"] == "teacher":
         query = query.where(Venue.status == "active")
         count_query = count_query.where(Venue.status == "active")
     elif current_user["role"] not in ("admin", "facility_manager"):
         raise HTTPException(status_code=403, detail="权限不足")
 
-    # Filters
     if status_filter:
         query = query.where(Venue.status == status_filter)
         count_query = count_query.where(Venue.status == status_filter)
@@ -126,11 +128,9 @@ async def list_venues(
         query = query.where(Venue.capacity <= capacity_max)
         count_query = count_query.where(Venue.capacity <= capacity_max)
 
-    # Get total count
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
-    # Pagination
     query = query.order_by(Venue.id).limit(limit).offset(offset)
     result = await db.execute(query)
     venues = result.scalars().all()
@@ -145,12 +145,11 @@ async def get_venue(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Venue).where(Venue.id == venue_id))
-    venue = result.scalar_one_or_none()
-    if not venue:
-        raise HTTPException(status_code=404, detail="场地不存在")
+    venue = await _get_venue_or_404(db, venue_id)
 
-    # Teachers can only see active venues (404, not 403, to prevent probing)
+    if current_user["role"] == "student":
+        raise HTTPException(status_code=403, detail="权限不足")
+
     if current_user["role"] == "teacher" and venue.status != "active":
         raise HTTPException(status_code=404, detail="场地不存在")
 
@@ -165,10 +164,7 @@ async def update_venue(
     current_user: dict = Depends(require_role(["admin", "facility_manager"])),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Venue).where(Venue.id == venue_id))
-    venue = result.scalar_one_or_none()
-    if not venue:
-        raise HTTPException(status_code=404, detail="场地不存在")
+    venue = await _get_venue_or_404(db, venue_id)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -191,24 +187,14 @@ async def update_venue(
 @router.patch("/{venue_id}/status", response_model=VenueResponse)
 async def change_venue_status(
     venue_id: int,
-    data: dict,
+    data: VenueStatusUpdate,
     current_user: dict = Depends(require_role(["admin", "facility_manager"])),
     db: AsyncSession = Depends(get_db),
 ):
-    new_status = data.get("status")
-    if new_status not in ("active", "inactive", "maintenance"):
-        raise HTTPException(
-            status_code=422,
-            detail="无效的状态值",
-        )
-
-    result = await db.execute(select(Venue).where(Venue.id == venue_id))
-    venue = result.scalar_one_or_none()
-    if not venue:
-        raise HTTPException(status_code=404, detail="场地不存在")
+    venue = await _get_venue_or_404(db, venue_id)
 
     old_status = venue.status
-    venue.status = new_status
+    venue.status = data.status
     await db.flush()
 
     await audit_log(
@@ -217,7 +203,7 @@ async def change_venue_status(
         entity_id=venue.id,
         action="status_change",
         actor_id=current_user["id"],
-        changes={"old_status": old_status, "new_status": new_status},
+        changes={"old_status": old_status, "new_status": data.status},
     )
 
     availability = await _get_availability(db, venue.id)
@@ -229,24 +215,19 @@ async def change_venue_status(
 # ---------------------------------------------------------------------------
 
 
-@router.put("/{venue_id}/availability")
+@router.put("/{venue_id}/availability", response_model=VenueResponse)
 async def set_availability(
     venue_id: int,
     data: AvailabilitySlotsUpdate,
     current_user: dict = Depends(require_role(["admin", "facility_manager"])),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Venue).where(Venue.id == venue_id))
-    venue = result.scalar_one_or_none()
-    if not venue:
-        raise HTTPException(status_code=404, detail="场地不存在")
+    venue = await _get_venue_or_404(db, venue_id)
 
-    # Delete existing availability slots
     await db.execute(
         delete(VenueAvailability).where(VenueAvailability.venue_id == venue_id)
     )
 
-    # Create new slots
     for slot in data.slots:
         start = datetime.datetime.strptime(slot.start_time, "%H:%M").time()
         end = datetime.datetime.strptime(slot.end_time, "%H:%M").time()
@@ -278,52 +259,61 @@ async def set_availability(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/{venue_id}/blackouts", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{venue_id}/blackouts",
+    response_model=BlackoutResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_blackout(
     venue_id: int,
     data: BlackoutCreate,
     current_user: dict = Depends(require_role(["admin", "facility_manager"])),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Venue).where(Venue.id == venue_id))
-    venue = result.scalar_one_or_none()
-    if not venue:
-        raise HTTPException(status_code=404, detail="场地不存在")
-
-    start_date = datetime.date.fromisoformat(data.start_date)
-    end_date = datetime.date.fromisoformat(data.end_date)
+    await _get_venue_or_404(db, venue_id)
 
     blackout = VenueBlackout(
         venue_id=venue_id,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=data.start_date,
+        end_date=data.end_date,
         reason=data.reason,
     )
     db.add(blackout)
     await db.flush()
 
+    await audit_log(
+        db,
+        entity_type="venue",
+        entity_id=venue_id,
+        action="create_blackout",
+        actor_id=current_user["id"],
+        changes={
+            "start_date": str(data.start_date),
+            "end_date": str(data.end_date),
+            "reason": data.reason,
+        },
+    )
+
     return {
         "id": blackout.id,
         "venue_id": blackout.venue_id,
-        "start_date": blackout.start_date.isoformat(),
-        "end_date": blackout.end_date.isoformat(),
+        "start_date": blackout.start_date,
+        "end_date": blackout.end_date,
         "reason": blackout.reason,
     }
 
 
-@router.get("/{venue_id}/blackouts")
+@router.get("/{venue_id}/blackouts", response_model=list[BlackoutResponse])
 async def list_blackouts(
     venue_id: int,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Verify venue exists
-    result = await db.execute(select(Venue).where(Venue.id == venue_id))
-    venue = result.scalar_one_or_none()
-    if not venue:
-        raise HTTPException(status_code=404, detail="场地不存在")
+    venue = await _get_venue_or_404(db, venue_id)
 
-    # Teachers can only see blackouts for active venues
+    if current_user["role"] == "student":
+        raise HTTPException(status_code=403, detail="权限不足")
+
     if current_user["role"] == "teacher" and venue.status != "active":
         raise HTTPException(status_code=404, detail="场地不存在")
 
@@ -338,15 +328,18 @@ async def list_blackouts(
         {
             "id": b.id,
             "venue_id": b.venue_id,
-            "start_date": b.start_date.isoformat(),
-            "end_date": b.end_date.isoformat(),
+            "start_date": b.start_date,
+            "end_date": b.end_date,
             "reason": b.reason,
         }
         for b in blackouts
     ]
 
 
-@router.delete("/{venue_id}/blackouts/{blackout_id}")
+@router.delete(
+    "/{venue_id}/blackouts/{blackout_id}",
+    status_code=status.HTTP_200_OK,
+)
 async def delete_blackout(
     venue_id: int,
     blackout_id: int,
@@ -361,9 +354,18 @@ async def delete_blackout(
     )
     blackout = result.scalar_one_or_none()
     if not blackout:
-        raise HTTPException(status_code=404, detail="黑名单记录不存在")
+        raise HTTPException(status_code=404, detail="封场记录不存在")
 
     await db.delete(blackout)
     await db.flush()
+
+    await audit_log(
+        db,
+        entity_type="venue",
+        entity_id=venue_id,
+        action="delete_blackout",
+        actor_id=current_user["id"],
+        changes={"blackout_id": blackout_id},
+    )
 
     return {"id": blackout_id, "deleted": True}

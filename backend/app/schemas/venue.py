@@ -1,10 +1,12 @@
-from datetime import datetime
+import datetime as _dt
 from typing import Optional, List
 
 from pydantic import BaseModel, Field, model_validator
 
 
 class VenueCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     name: str = Field(..., min_length=1, max_length=100)
     capacity: Optional[int] = Field(None, gt=0)
     location: Optional[str] = Field(None, max_length=200)
@@ -16,11 +18,17 @@ class VenueUpdate(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    capacity: Optional[int] = None
+    capacity: Optional[int] = Field(None, gt=0)
     location: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
     status: Optional[str] = Field(None, pattern=r'^(active|inactive|maintenance)$')
     external_id: Optional[str] = Field(None, max_length=100)
+
+
+class VenueStatusUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    status: str = Field(..., pattern=r'^(active|inactive|maintenance)$')
 
 
 class VenueResponse(BaseModel):
@@ -32,8 +40,8 @@ class VenueResponse(BaseModel):
     status: str
     external_id: Optional[str] = None
     availability: List[dict] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: _dt.datetime
+    updated_at: _dt.datetime
 
 
 class VenueListResponse(BaseModel):
@@ -58,8 +66,8 @@ class AvailabilitySlotsUpdate(BaseModel):
 
 
 class BlackoutCreate(BaseModel):
-    start_date: str
-    end_date: str
+    start_date: _dt.date
+    end_date: _dt.date
     reason: Optional[str] = Field(None, max_length=200)
 
     @model_validator(mode="after")
@@ -72,6 +80,6 @@ class BlackoutCreate(BaseModel):
 class BlackoutResponse(BaseModel):
     id: int
     venue_id: int
-    start_date: str
-    end_date: str
+    start_date: _dt.date
+    end_date: _dt.date
     reason: Optional[str] = None
