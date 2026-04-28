@@ -9,7 +9,6 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import require_role
 from app.models.xr_session import XRSession
-from app.models.xr_event import XREvent
 from app.schemas.xr import (
     XRSessionListResponse,
     XRSessionResponse,
@@ -56,7 +55,7 @@ async def receive_callback(
         sig_header = request.headers.get("X-XR-Signature", "")
         if not verify_callback_signature(secret, body_bytes, sig_header):
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid signature",
             )
 

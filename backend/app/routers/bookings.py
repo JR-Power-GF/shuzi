@@ -1,9 +1,10 @@
 import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.booking import Booking, BookingEquipment
@@ -16,6 +17,7 @@ from app.schemas.booking import (
     BookingUpdate,
 )
 from app.services.booking_service import BookingService
+from app.services.xr_service import cancel_xr_session_for_booking, create_xr_session_for_booking
 
 router = APIRouter(prefix="/api/v1/bookings", tags=["bookings"])
 
@@ -82,12 +84,17 @@ async def _enrich_booking(db: AsyncSession, booking) -> dict:
 async def create_booking(
     data: BookingCreate,
     response: Response,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(require_role(["admin", "facility_manager", "teacher"])),
     db: AsyncSession = Depends(get_db),
 ):
     booked_by = current_user["id"]
     svc = BookingService(db)
     booking, is_idempotent = await svc.create(data, actor_id=booked_by)
+
+    if settings.XR_ENABLED and not is_idempotent:
+        background_tasks.add_task(create_xr_session_for_booking, booking.id)
+
     response.status_code = status.HTTP_200_OK if is_idempotent else status.HTTP_201_CREATED
     return await _enrich_booking(db, booking)
 
@@ -168,6 +175,7 @@ async def update_booking(
 @router.post("/{booking_id}/cancel", response_model=BookingResponse)
 async def cancel_booking(
     booking_id: int,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -180,4 +188,8 @@ async def cancel_booking(
             raise HTTPException(status_code=403, detail="权限不足")
 
     booking = await svc.cancel(booking_id, actor_id=current_user["id"])
+
+    if settings.XR_ENABLED:
+        background_tasks.add_task(cancel_xr_session_for_booking, booking.id)
+
     return await _enrich_booking(db, booking)

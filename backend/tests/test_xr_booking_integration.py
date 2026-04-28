@@ -35,12 +35,18 @@ async def _committed_booking(test_session_maker, *, username, venue_name):
         return booking.id
 
 
+def _patch_session_factory(monkeypatch, test_session_maker):
+    import app.services.xr_service as _mod
+    monkeypatch.setattr(_mod, "_session_factory", test_session_maker)
+
+
 class TestBookingTriggersXR:
     @pytest.mark.asyncio(loop_scope="session")
     async def test_create_booking_creates_xr_session(self, test_session_maker, monkeypatch):
         from app.services.xr_service import create_xr_session_for_booking
 
         monkeypatch.setattr(settings, "XR_ENABLED", True)
+        _patch_session_factory(monkeypatch, test_session_maker)
         booking_id = await _committed_booking(
             test_session_maker, username="xr-int-ok", venue_name="XR Int OK",
         )
@@ -59,6 +65,7 @@ class TestBookingTriggersXR:
         from app.services.xr_service import create_xr_session_for_booking
 
         monkeypatch.setattr(settings, "XR_ENABLED", False)
+        _patch_session_factory(monkeypatch, test_session_maker)
         booking_id = await _committed_booking(
             test_session_maker, username="xr-int-off", venue_name="XR Int Off",
         )
@@ -79,6 +86,7 @@ class TestBookingTriggersXR:
         )
 
         monkeypatch.setattr(settings, "XR_ENABLED", True)
+        _patch_session_factory(monkeypatch, test_session_maker)
         booking_id = await _committed_booking(
             test_session_maker, username="xr-int-cancel", venue_name="XR Int Cancel",
         )
@@ -102,6 +110,7 @@ class TestBookingTriggersXR:
         from app.services.xr_service import create_xr_session_for_booking
 
         monkeypatch.setattr(settings, "XR_ENABLED", True)
+        _patch_session_factory(monkeypatch, test_session_maker)
         original = xp._PROVIDER_REGISTRY.copy()
 
         class FailProvider(xp.NullXRProvider):
@@ -143,6 +152,7 @@ class TestBookingTriggersXR:
         from app.services.xr_service import create_xr_session_for_booking
 
         monkeypatch.setattr(settings, "XR_ENABLED", True)
+        _patch_session_factory(monkeypatch, test_session_maker)
         booking_id = await _committed_booking(
             test_session_maker, username="xr-int-idem", venue_name="XR Int Idem",
         )

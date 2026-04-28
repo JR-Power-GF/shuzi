@@ -17,6 +17,7 @@ import logging
 from typing import Any, Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -31,6 +32,13 @@ logger = logging.getLogger(__name__)
 # In production this uses the default async_session_maker from app.database.
 # In tests this can be monkeypatched to use the test session maker.
 _session_factory = _default_session_maker
+
+CALLBACK_EVENT_STATUS_MAP: dict[str, str] = {
+    "session.started": "active",
+    "session.completed": "completed",
+    "session.failed": "failed",
+    "session.cancelled": "cancelled",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +75,12 @@ async def create_xr_session_for_booking(booking_id: int) -> None:
                 request_payload=json.dumps({"booking_id": booking_id}),
             )
             db.add(xr)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                logger.info("XR session race for booking %s, treating as idempotent", booking_id)
+                return
 
             provider = get_xr_provider()
             result: XRResult = await provider.create_session(booking_id=booking_id)
@@ -82,9 +95,22 @@ async def create_xr_session_for_booking(booking_id: int) -> None:
                 xr.error_message = result.error or "Unknown provider error"
 
             await db.commit()
-        except Exception:
+        except Exception as exc:
             await db.rollback()
-            raise
+            logger.exception("Failed to create XR session for booking %s", booking_id)
+            # Attempt to record failure in a separate session
+            try:
+                async with _session_factory() as fail_db:
+                    fail_xr = XRSession(
+                        booking_id=booking_id,
+                        provider=settings.XR_PROVIDER,
+                        status="failed",
+                        error_message=str(exc),
+                    )
+                    fail_db.add(fail_xr)
+                    await fail_db.commit()
+            except Exception:
+                logger.exception("Also failed to record XR session failure for booking %s", booking_id)
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +142,9 @@ async def cancel_xr_session_for_booking(booking_id: int) -> None:
 
             xr.status = "cancelled"
             await db.commit()
-        except Exception:
+        except Exception as exc:
             await db.rollback()
-            raise
+            logger.exception("Failed to cancel XR session for booking %s", booking_id)
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +192,13 @@ async def process_callback_event(
     if payload is not None:
         if isinstance(payload, dict):
             payload_str = json.dumps(payload)
-            booking_id = payload.get("booking_id")
+            booking_id_raw = payload.get("booking_id")
+            if booking_id_raw is not None:
+                try:
+                    booking_id = int(booking_id_raw)
+                except (ValueError, TypeError):
+                    logger.warning("Invalid booking_id in callback payload: %s", booking_id_raw)
+                    booking_id = None
         else:
             payload_str = payload
 
@@ -180,13 +212,7 @@ async def process_callback_event(
             xr_session_id = xr_session.id
 
             # Update session status based on event type
-            status_map = {
-                "session.started": "active",
-                "session.completed": "completed",
-                "session.failed": "failed",
-                "session.cancelled": "cancelled",
-            }
-            new_status = status_map.get(event_type)
+            new_status = CALLBACK_EVENT_STATUS_MAP.get(event_type)
             if new_status:
                 xr_session.status = new_status
                 await db.flush()
@@ -205,6 +231,11 @@ async def process_callback_event(
         processed_at=now,
     )
     db.add(event)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        return False
 
     return True
 

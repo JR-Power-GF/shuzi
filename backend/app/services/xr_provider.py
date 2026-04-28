@@ -27,9 +27,6 @@ class XRProvider(Protocol):
 
     async def cancel_session(self, *, session_id: str) -> XRResult: ...
 
-    async def update_session(self, *, session_id: str, updates: dict) -> XRResult: ...
-
-
 class NullXRProvider:
     """No-op XR provider. All methods succeed without external calls."""
 
@@ -41,9 +38,6 @@ class NullXRProvider:
         return XRResult(success=True)
 
     async def cancel_session(self, *, session_id: str) -> XRResult:
-        return XRResult(success=True)
-
-    async def update_session(self, *, session_id: str, updates: dict) -> XRResult:
         return XRResult(success=True)
 
 

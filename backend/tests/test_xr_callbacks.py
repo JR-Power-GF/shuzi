@@ -77,7 +77,7 @@ class TestReceiveCallback:
         assert resp.status_code == 400
 
     @pytest.mark.asyncio(loop_scope="session")
-    async def test_invalid_signature_returns_401(self, client, db_session, monkeypatch):
+    async def test_invalid_signature_returns_403(self, client, db_session, monkeypatch):
         monkeypatch.setattr(settings, "XR_ENABLED", True)
         monkeypatch.setattr(settings, "XR_CALLBACK_SECRET", "my-secret")
 
@@ -86,7 +86,7 @@ class TestReceiveCallback:
             json={"event_id": "ep-sig-bad", "provider": "null", "event_type": "test"},
             headers={"X-XR-Signature": "wrong-signature"},
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 403
 
     @pytest.mark.asyncio(loop_scope="session")
     async def test_valid_signature_returns_200(self, client, db_session, monkeypatch):

@@ -64,11 +64,6 @@ class TestNullXRProvider:
         result = await provider.cancel_session(session_id="any-id")
         assert result.success is True
 
-    @pytest.mark.asyncio(loop_scope="session")
-    async def test_update_session_returns_success(self, provider):
-        result = await provider.update_session(session_id="any-id", updates={"key": "val"})
-        assert result.success is True
-
     def test_satisfies_xr_provider_protocol(self, provider):
         from app.services.xr_provider import XRProvider
 

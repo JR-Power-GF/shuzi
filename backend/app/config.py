@@ -42,3 +42,11 @@ def validate_secret_key(s: Settings) -> None:
             "SECRET_KEY is set to the default value. "
             "Set the SECRET_KEY environment variable to a strong random string."
         )
+
+
+def validate_xr_config(s: Settings) -> None:
+    if s.XR_ENABLED and not s.XR_CALLBACK_SECRET:
+        raise ValueError(
+            "XR_CALLBACK_SECRET must be set when XR_ENABLED is True. "
+            "Set the XR_CALLBACK_SECRET environment variable."
+        )

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings, validate_secret_key
+from app.config import settings, validate_secret_key, validate_xr_config
 from app.routers import auth as auth_router
 from app.routers import classes as classes_router
 from app.routers import courses as courses_router
@@ -27,6 +27,7 @@ from app.routers import xr as xr_router
 async def lifespan(app: FastAPI):
     try:
         validate_secret_key(settings)
+        validate_xr_config(settings)
     except ValueError:
         if os.environ.get("ENVIRONMENT") != "test":
             raise
