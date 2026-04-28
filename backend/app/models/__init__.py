@@ -13,6 +13,8 @@ from app.models.prompt_template import PromptTemplate
 from app.models.training_summary import TrainingSummary
 from app.models.audit_log import AuditLog
 from app.models.venue import Venue
+from app.models.venue_availability import VenueAvailability
+from app.models.venue_blackout import VenueBlackout
 from app.models.equipment import Equipment
 from app.models.booking import Booking, BookingEquipment
 
@@ -32,6 +34,8 @@ __all__ = [
     "TrainingSummary",
     "AuditLog",
     "Venue",
+    "VenueAvailability",
+    "VenueBlackout",
     "Equipment",
     "Booking",
     "BookingEquipment",

@@ -27,6 +27,13 @@ async def create_test_user(
     is_active: bool = True,
     primary_class_id: int = None,
 ) -> User:
+    # Check if user already exists in this session (handles re-creation within same test)
+    from sqlalchemy import select as sa_select
+    existing = await db.execute(sa_select(User).where(User.username == username))
+    existing_user = existing.scalar_one_or_none()
+    if existing_user:
+        return existing_user
+
     user = User(
         username=username,
         password_hash=hash_password(password),
