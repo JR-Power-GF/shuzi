@@ -1,15 +1,25 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
+from app.models.course import Course
+from app.models.submission import Submission
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskResponse
+from app.schemas.task import (
+    TaskCreate, TaskDescriptionGenerateRequest, TaskDescriptionGenerateResponse,
+    TaskQARequest, TaskQAResponse, TaskResponse, TaskUpdate,
+)
+from app.services.ai import AIServiceError, BudgetExceededError, get_ai_service
+from app.services.prompts import PromptService
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -22,6 +32,7 @@ def _task_to_response(task: Task, class_name: str) -> TaskResponse:
         requirements=task.requirements,
         class_id=task.class_id,
         class_name=class_name,
+        course_id=task.course_id,
         created_by=task.created_by,
         deadline=task.deadline,
         allowed_file_types=json.loads(task.allowed_file_types),
@@ -34,10 +45,106 @@ def _task_to_response(task: Task, class_name: str) -> TaskResponse:
     )
 
 
+@router.post("/generate-description", response_model=TaskDescriptionGenerateResponse)
+async def generate_task_description(
+    data: TaskDescriptionGenerateRequest,
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    prompt_service = PromptService()
+    try:
+        prompt_text = await prompt_service.fill_template(
+            db, "task_description",
+            {"course_name": data.course_name, "topic": data.title, "language": data.language},
+        )
+    except ValueError:
+        raise HTTPException(status_code=500, detail="任务描述模板未配置")
+
+    service = get_ai_service()
+    try:
+        result = await service.generate(
+            db=db, prompt=prompt_text, user_id=current_user["id"],
+            role=current_user["role"], endpoint="generate_description",
+        )
+    except BudgetExceededError:
+        raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
+    except AIServiceError:
+        # JSONResponse (not HTTPException) so get_db() commits the error log
+        return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
+
+    return TaskDescriptionGenerateResponse(
+        description=result["text"],
+        usage_log_id=result["usage_log_id"],
+        prompt_tokens=result["prompt_tokens"],
+        completion_tokens=result["completion_tokens"],
+    )
+
+
+@router.post("/{task_id}/qa", response_model=TaskQAResponse)
+async def ask_task_question(
+    task_id: int,
+    data: TaskQARequest,
+    current_user: dict = Depends(require_role(["student"])),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    if task.status != "active":
+        raise HTTPException(status_code=400, detail="任务已归档，无法提问")
+
+    user_result = await db.execute(
+        select(User.primary_class_id).where(User.id == current_user["id"])
+    )
+    class_id = user_result.scalar_one_or_none()
+    if class_id is None or class_id != task.class_id:
+        raise HTTPException(status_code=403, detail="无权访问该任务")
+
+    course_name = ""
+    if task.course_id:
+        course_result = await db.execute(select(Course.name).where(Course.id == task.course_id))
+        course_name = course_result.scalar_one_or_none() or ""
+
+    prompt_service = PromptService()
+    try:
+        prompt_text = await prompt_service.fill_template(
+            db, "student_qa",
+            {
+                "task_title": task.title or "",
+                "task_description": task.description or "",
+                "task_requirements": task.requirements or "",
+                "course_name": course_name,
+                "question": data.question,
+            },
+        )
+    except ValueError:
+        raise HTTPException(status_code=500, detail="问答模板未配置")
+
+    service = get_ai_service()
+    try:
+        ai_result = await service.generate(
+            db=db, prompt=prompt_text, user_id=current_user["id"],
+            role=current_user["role"], endpoint="student_qa",
+        )
+    except BudgetExceededError:
+        raise HTTPException(status_code=429, detail="今日 AI 调用额度已用完")
+    except AIServiceError:
+        return JSONResponse(status_code=502, content={"detail": "AI 服务暂时不可用"})
+
+    return TaskQAResponse(
+        answer=ai_result["text"],
+        usage_log_id=ai_result["usage_log_id"],
+        prompt_tokens=ai_result["prompt_tokens"],
+        completion_tokens=ai_result["completion_tokens"],
+    )
+
+
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     data: TaskCreate,
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Class).where(Class.id == data.class_id))
@@ -45,14 +152,24 @@ async def create_task(
     if not cls:
         raise HTTPException(status_code=404, detail="班级不存在")
 
-    if cls.teacher_id != current_user["id"]:
+    if current_user["role"] != "admin" and cls.teacher_id != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能为自己的班级创建任务")
+
+    course_id = data.course_id
+    if course_id is not None:
+        course_result = await db.execute(select(Course).where(Course.id == course_id))
+        course = course_result.scalar_one_or_none()
+        if not course:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        if current_user["role"] != "admin" and course.teacher_id != current_user["id"]:
+            raise HTTPException(status_code=403, detail="只能关联自己的课程")
 
     task = Task(
         title=data.title,
         description=data.description,
         requirements=data.requirements,
         class_id=data.class_id,
+        course_id=course_id,
         created_by=current_user["id"],
         deadline=data.deadline,
         allowed_file_types=json.dumps(data.allowed_file_types),
@@ -76,12 +193,14 @@ async def get_my_tasks(
             select(User.primary_class_id).where(User.id == current_user["id"])
         )
         class_id = user_result.scalar_one_or_none()
-        if not class_id:
+        if class_id is None:
             return []
         result = await db.execute(
             select(Task)
+            .outerjoin(Course, Course.id == Task.course_id)
             .where(Task.class_id == class_id)
             .where(Task.status == "active")
+            .where((Course.status == "active") | (Course.id.is_(None)))
             .order_by(Task.deadline)
         )
     elif current_user["role"] == "teacher":
@@ -130,3 +249,124 @@ async def get_task_detail(
     cls_result = await db.execute(select(Class.name).where(Class.id == task.class_id))
     class_name = cls_result.scalar_one()
     return _task_to_response(task, class_name)
+
+
+@router.put("/{task_id}", response_model=TaskResponse)
+async def update_task(
+    task_id: int,
+    data: TaskUpdate,
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能编辑自己创建的任务")
+
+    update_data = data.model_dump(exclude_unset=True)
+
+    if "course_id" in update_data and update_data["course_id"] is not None:
+        course_result = await db.execute(select(Course).where(Course.id == update_data["course_id"]))
+        course = course_result.scalar_one_or_none()
+        if not course:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        if current_user["role"] != "admin" and course.teacher_id != current_user["id"]:
+            raise HTTPException(status_code=403, detail="只能关联自己的课程")
+
+    sub_count = await db.execute(
+        select(func.count()).select_from(Submission).where(Submission.task_id == task_id)
+    )
+    has_submissions = sub_count.scalar() > 0
+
+    if has_submissions:
+        if "allowed_file_types" in update_data:
+            raise HTTPException(status_code=400, detail="已有提交，不能修改文件类型")
+        if "deadline" in update_data and update_data["deadline"] is not None:
+            earliest_result = await db.execute(
+                select(func.min(Submission.submitted_at)).where(Submission.task_id == task_id)
+            )
+            earliest = earliest_result.scalar()
+            if earliest and update_data["deadline"] < earliest:
+                raise HTTPException(status_code=400, detail="截止日期不能早于最早提交时间")
+
+    for field, value in update_data.items():
+        if field == "allowed_file_types" and value is not None:
+            setattr(task, field, json.dumps(value))
+        else:
+            setattr(task, field, value)
+    await db.flush()
+
+    cls_result = await db.execute(select(Class).where(Class.id == task.class_id))
+    cls = cls_result.scalar_one()
+    return _task_to_response(task, cls.name)
+
+
+@router.delete("/{task_id}")
+async def delete_task(
+    task_id: int,
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能删除自己创建的任务")
+
+    sub_count = await db.execute(
+        select(func.count()).select_from(Submission).where(Submission.task_id == task_id)
+    )
+    if sub_count.scalar() > 0:
+        raise HTTPException(status_code=400, detail="任务已有提交，无法删除")
+
+    await db.delete(task)
+    await db.flush()
+    return {"message": "任务已删除"}
+
+
+@router.post("/{task_id}/archive")
+async def archive_task(
+    task_id: int,
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
+        raise HTTPException(status_code=403, detail="只能归档自己创建的任务")
+
+    task.status = "archived"
+    await db.flush()
+    return {"id": task.id, "status": "archived"}
+
+
+@router.get("", response_model=dict)
+async def list_tasks_admin(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    course_id: Optional[int] = Query(None),
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Task)
+    if course_id is not None:
+        query = query.where(Task.course_id == course_id)
+    total_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = total_result.scalar()
+
+    result = await db.execute(query.offset(skip).limit(limit).order_by(Task.id.desc()))
+    tasks = result.scalars().all()
+
+    items = []
+    for task in tasks:
+        cls_result = await db.execute(select(Class).where(Class.id == task.class_id))
+        cls = cls_result.scalar_one_or_none()
+        class_name = cls.name if cls else ""
+        items.append(_task_to_response(task, class_name))
+
+    return {"items": items, "total": total}

@@ -74,3 +74,44 @@ async def test_download_file_success(client, db_session, upload_dir):
     resp = await client.get(f"/api/files/{sf.id}", headers=auth_headers(token))
     assert resp.status_code == 200
     assert resp.content == b"PDF content here"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_upload_rejects_path_traversal(client, db_session, upload_dir):
+    """P0 fix: filenames with path traversal must be sanitized."""
+    await create_test_user(db_session, username="stu_traversal", role="student")
+    token = await login_user(client, "stu_traversal")
+
+    resp = await client.post(
+        "/api/files/upload",
+        files={"file": ("../../../tmp/evil.txt", io.BytesIO(b"bad"), "text/plain")},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["file_name"] == "evil.txt"
+    # Verify no file escaped outside upload_dir
+    assert not os.path.exists(os.path.join(upload_dir, "..", "..", "..", "tmp", "evil.txt"))
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_upload_rejects_absolute_path(client, db_session, upload_dir):
+    """P0 fix: absolute path filenames must be sanitized."""
+    import tempfile
+    evil_path = os.path.join(tempfile.gettempdir(), "evil_upload_test.txt")
+    # Clean up before test
+    if os.path.exists(evil_path):
+        os.remove(evil_path)
+
+    await create_test_user(db_session, username="stu_abs", role="student")
+    token = await login_user(client, "stu_abs")
+
+    resp = await client.post(
+        "/api/files/upload",
+        files={"file": (evil_path, io.BytesIO(b"bad"), "text/plain")},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["file_name"] == "evil_upload_test.txt"
+    assert not os.path.exists(evil_path)

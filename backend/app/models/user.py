@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Boolean, Integer, DateTime, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, _utcnow_naive
 
 
 class User(Base):
@@ -25,12 +25,12 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, nullable=False
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False
     )
 
     __table_args__ = (
-        CheckConstraint("role IN ('admin', 'teacher', 'student')", name="chk_user_role"),
+        CheckConstraint("role IN ('admin', 'teacher', 'student', 'facility_manager')", name="chk_user_role"),
     )

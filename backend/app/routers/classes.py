@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,7 +8,14 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.class_ import Class
 from app.models.user import User
-from app.schemas.class_ import ClassCreate, ClassResponse, StudentBrief
+from app.schemas.class_ import (
+    ClassCreate,
+    ClassListResponse,
+    ClassResponse,
+    ClassUpdate,
+    EnrollStudents,
+    StudentBrief,
+)
 
 router = APIRouter(prefix="/api/classes", tags=["classes"])
 
@@ -44,12 +53,15 @@ async def create_class(
 
 @router.get("/my", response_model=list[ClassResponse])
 async def get_my_classes(
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Class).where(Class.teacher_id == current_user["id"])
-    )
+    if current_user["role"] == "admin":
+        result = await db.execute(select(Class))
+    else:
+        result = await db.execute(
+            select(Class).where(Class.teacher_id == current_user["id"])
+        )
     classes = result.scalars().all()
 
     response = []
@@ -100,3 +112,120 @@ async def get_class_students(
     )
     rows = result.all()
     return [StudentBrief(id=r[0], username=r[1], real_name=r[2]) for r in rows]
+
+
+@router.put("/{class_id}", response_model=ClassResponse)
+async def update_class(
+    class_id: int,
+    data: ClassUpdate,
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Class).where(Class.id == class_id))
+    cls = result.scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="班级不存在")
+
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(cls, field, value)
+    await db.flush()
+
+    teacher_name = None
+    if cls.teacher_id:
+        t = await db.execute(select(User).where(User.id == cls.teacher_id))
+        teacher = t.scalar_one_or_none()
+        if teacher:
+            teacher_name = teacher.real_name
+
+    student_count_result = await db.execute(
+        select(func.count()).select_from(User).where(User.primary_class_id == cls.id)
+    )
+    student_count = student_count_result.scalar() or 0
+
+    return ClassResponse(
+        id=cls.id, name=cls.name, semester=cls.semester,
+        teacher_id=cls.teacher_id, teacher_name=teacher_name,
+        student_count=student_count, created_at=cls.created_at,
+    )
+
+
+@router.delete("/{class_id}")
+async def delete_class(
+    class_id: int,
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Class).where(Class.id == class_id))
+    cls = result.scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="班级不存在")
+
+    student_count = await db.execute(
+        select(func.count()).select_from(User).where(User.primary_class_id == class_id)
+    )
+    if student_count.scalar() > 0:
+        raise HTTPException(status_code=400, detail="班级中仍有学生，无法删除")
+
+    await db.delete(cls)
+    await db.flush()
+    return {"message": "班级已删除"}
+
+
+@router.get("", response_model=ClassListResponse)
+async def list_classes(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    semester: Optional[str] = None,
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Class)
+    if semester:
+        query = query.where(Class.semester == semester)
+
+    total_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = total_result.scalar()
+
+    result = await db.execute(query.offset(skip).limit(limit).order_by(Class.id))
+    classes = result.scalars().all()
+
+    items = []
+    for cls in classes:
+        teacher_name = None
+        if cls.teacher_id:
+            t = await db.execute(select(User).where(User.id == cls.teacher_id))
+            teacher = t.scalar_one_or_none()
+            if teacher:
+                teacher_name = teacher.real_name
+        sc = await db.execute(
+            select(func.count()).select_from(User).where(User.primary_class_id == cls.id)
+        )
+        items.append(ClassResponse(
+            id=cls.id, name=cls.name, semester=cls.semester,
+            teacher_id=cls.teacher_id, teacher_name=teacher_name,
+            student_count=sc.scalar() or 0, created_at=cls.created_at,
+        ))
+    return ClassListResponse(items=items, total=total)
+
+
+@router.post("/{class_id}/students")
+async def enroll_students(
+    class_id: int,
+    data: EnrollStudents,
+    current_user: dict = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Class).where(Class.id == class_id))
+    cls = result.scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="班级不存在")
+
+    enrolled = 0
+    for sid in data.student_ids:
+        u = await db.execute(select(User).where(User.id == sid))
+        user = u.scalar_one_or_none()
+        if user and user.role == "student":
+            user.primary_class_id = class_id
+            enrolled += 1
+    await db.flush()
+    return {"enrolled_count": enrolled}

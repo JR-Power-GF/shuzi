@@ -1,8 +1,7 @@
-import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TaskCreate(BaseModel):
@@ -10,10 +9,23 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     requirements: Optional[str] = None
     class_id: int
+    course_id: Optional[int] = None
     deadline: datetime
-    allowed_file_types: List[str]
+    allowed_file_types: list[str]
     max_file_size_mb: int = 50
     allow_late_submission: bool = False
+    late_penalty_percent: Optional[float] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    course_id: Optional[int] = None
+    deadline: Optional[datetime] = None
+    allowed_file_types: Optional[list[str]] = None
+    max_file_size_mb: Optional[int] = None
+    allow_late_submission: Optional[bool] = None
     late_penalty_percent: Optional[float] = None
 
 
@@ -24,12 +36,37 @@ class TaskResponse(BaseModel):
     requirements: Optional[str] = None
     class_id: int
     class_name: str
+    course_id: Optional[int] = None
     created_by: int
     deadline: datetime
-    allowed_file_types: List[str]
+    allowed_file_types: list[str]
     max_file_size_mb: int
     allow_late_submission: bool
     late_penalty_percent: Optional[float] = None
     status: str
     grades_published: bool
     created_at: datetime
+
+
+class TaskDescriptionGenerateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    course_name: str = Field("实训课程", max_length=100)
+    language: str = Field("中文", max_length=20)
+
+
+class TaskDescriptionGenerateResponse(BaseModel):
+    description: str
+    usage_log_id: int
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class TaskQARequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+
+
+class TaskQAResponse(BaseModel):
+    answer: str
+    usage_log_id: int
+    prompt_tokens: int
+    completion_tokens: int

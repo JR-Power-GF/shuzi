@@ -24,6 +24,8 @@ async def upload_file(
     current_user: dict = Depends(get_current_user),
 ):
     filename = file.filename or "unnamed"
+    # Sanitize filename to prevent path traversal
+    filename = os.path.basename(filename) or "unnamed"
     file_ext = os.path.splitext(filename)[1].lower()
 
     if file_ext not in settings.ALLOWED_FILE_TYPES:

@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import Float, Integer, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, _utcnow_naive
 
 
 class Grade(Base):
@@ -22,5 +22,5 @@ class Grade(Base):
         Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     graded_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, nullable=False
     )

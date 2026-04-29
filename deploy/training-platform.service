@@ -1,0 +1,15 @@
+[Unit]
+Description=Training Platform Backend (FastAPI)
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/training-platform/backend
+ExecStart=/opt/training-platform/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

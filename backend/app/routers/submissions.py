@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, _utcnow_naive
 from app.dependencies.auth import get_current_user, require_role
 from app.models.grade import Grade
 from app.models.submission import Submission
@@ -42,7 +42,7 @@ async def create_submission(
     if user.primary_class_id != task.class_id:
         raise HTTPException(status_code=403, detail="你不属于该任务的班级")
 
-    now = datetime.datetime.utcnow()
+    now = _utcnow_naive()
     deadline = task.deadline.replace(tzinfo=None) if task.deadline.tzinfo else task.deadline
     is_late = now > deadline
 
@@ -192,7 +192,7 @@ async def get_submission(
 @router.get("/tasks/{task_id}/submissions", response_model=list[SubmissionResponse])
 async def list_task_submissions(
     task_id: int,
-    current_user: dict = Depends(require_role("teacher")),
+    current_user: dict = Depends(require_role(["teacher", "admin"])),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id))
@@ -200,7 +200,7 @@ async def list_task_submissions(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task.created_by != current_user["id"]:
+    if current_user["role"] != "admin" and task.created_by != current_user["id"]:
         raise HTTPException(status_code=403, detail="只能查看自己任务的提交")
 
     result = await db.execute(
