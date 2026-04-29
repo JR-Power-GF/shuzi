@@ -1,12 +1,14 @@
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.user import User
 
 security = HTTPBearer()
 
@@ -23,11 +25,6 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
-        return {
-            "id": int(payload["sub"]),
-            "role": payload["role"],
-            "username": payload.get("username"),
-        }
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,13 +36,60 @@ async def get_current_user(
             detail="Invalid token",
         )
 
+    user_id = int(payload["sub"])
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User deactivated or not found",
+        )
 
-def require_role(allowed_role: str):
+    return {
+        "id": user.id,
+        "role": user.role,
+        "username": user.username,
+    }
+
+
+def require_role(allowed_roles):
+    """Accept a single role string or a list of role strings."""
+    if isinstance(allowed_roles, str):
+        allowed_roles = [allowed_roles]
+
     async def role_checker(current_user: dict = Depends(get_current_user)) -> dict:
-        if current_user["role"] != allowed_role:
+        if current_user["role"] not in allowed_roles:
+            roles_str = "', '".join(allowed_roles)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{allowed_role}' required",
+                detail=f"Role '{roles_str}' required",
             )
         return current_user
     return role_checker
+
+
+def require_role_or_owner(
+    allowed_roles: list[str] | str,
+    owner_id_getter: Callable[[dict, AsyncSession], Awaitable[int | None]],
+):
+    """Dependency that allows access to allowed_roles OR the resource owner."""
+    if isinstance(allowed_roles, str):
+        allowed_roles = [allowed_roles]
+
+    async def checker(
+        current_user: dict = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        if current_user["role"] in allowed_roles:
+            return current_user
+
+        owner_id = await owner_id_getter(current_user, db)
+        if owner_id is not None and current_user["id"] == owner_id:
+            return current_user
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+
+    return checker

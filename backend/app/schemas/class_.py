@@ -1,0 +1,41 @@
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
+
+
+class ClassCreate(BaseModel):
+    name: str
+    semester: str
+    teacher_id: Optional[int] = None
+
+
+class ClassResponse(BaseModel):
+    id: int
+    name: str
+    semester: str
+    teacher_id: Optional[int] = None
+    teacher_name: Optional[str] = None
+    student_count: int = 0
+    created_at: datetime
+
+
+class ClassUpdate(BaseModel):
+    name: Optional[str] = None
+    semester: Optional[str] = None
+    teacher_id: Optional[int] = None
+
+
+class StudentBrief(BaseModel):
+    id: int
+    username: str
+    real_name: str
+
+
+class ClassListResponse(BaseModel):
+    items: List[ClassResponse]
+    total: int
+
+
+class EnrollStudents(BaseModel):
+    student_ids: List[int]

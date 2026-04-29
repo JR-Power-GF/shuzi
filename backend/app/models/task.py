@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Boolean, Integer, Float, DateTime, ForeignKey, Text, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import Base
+from app.database import Base, _utcnow_naive
 
 
 class Task(Base):
@@ -16,6 +16,9 @@ class Task(Base):
     requirements: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     class_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    course_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     created_by: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
@@ -32,10 +35,10 @@ class Task(Base):
         Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, nullable=False
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False
+        DateTime, default=_utcnow_naive, onupdate=_utcnow_naive, nullable=False
     )
 
     __table_args__ = (
